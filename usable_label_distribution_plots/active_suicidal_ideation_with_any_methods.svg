@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="965" height="398" viewBox="0 0 965 398">
+<rect width="100%" height="100%" fill="white"/>
+<text x="28" y="34" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#111827">Active Suicidal Ideation With Any Methods</text>
+<text x="28" y="60" font-family="Arial, sans-serif" font-size="14" fill="#4b5563">Usable text-file IDs: 433</text>
+<text x="28" y="102" font-family="Arial, sans-serif" font-size="13" fill="#111827">false</text>
+<rect x="282" y="86" width="520" height="30" rx="3" fill="#eef2f7"/>
+<rect x="282" y="86" width="520" height="30" rx="3" fill="#2563eb"/>
+<text x="820" y="106" font-family="Arial, sans-serif" font-size="13" fill="#111827">191 (44.1%)</text>
+<text x="28" y="156" font-family="Arial, sans-serif" font-size="13" fill="#111827">does_not_apply</text>
+<rect x="282" y="140" width="520" height="30" rx="3" fill="#eef2f7"/>
+<rect x="282" y="140" width="258" height="30" rx="3" fill="#2563eb"/>
+<text x="820" y="160" font-family="Arial, sans-serif" font-size="13" fill="#111827">95 (21.9%)</text>
+<text x="28" y="210" font-family="Arial, sans-serif" font-size="13" fill="#111827">true</text>
+<rect x="282" y="194" width="520" height="30" rx="3" fill="#eef2f7"/>
+<rect x="282" y="194" width="212" height="30" rx="3" fill="#2563eb"/>
+<text x="820" y="214" font-family="Arial, sans-serif" font-size="13" fill="#111827">78 (18.0%)</text>
+<text x="28" y="264" font-family="Arial, sans-serif" font-size="13" fill="#111827">operator_did_not_ask</text>
+<rect x="282" y="248" width="520" height="30" rx="3" fill="#eef2f7"/>
+<rect x="282" y="248" width="171" height="30" rx="3" fill="#2563eb"/>
+<text x="820" y="268" font-family="Arial, sans-serif" font-size="13" fill="#111827">63 (14.5%)</text>
+<text x="28" y="318" font-family="Arial, sans-serif" font-size="13" fill="#111827">no_response</text>
+<rect x="282" y="302" width="520" height="30" rx="3" fill="#eef2f7"/>
+<rect x="282" y="302" width="16" height="30" rx="3" fill="#2563eb"/>
+<text x="820" y="322" font-family="Arial, sans-serif" font-size="13" fill="#111827">6 (1.4%)</text>
+</svg>
