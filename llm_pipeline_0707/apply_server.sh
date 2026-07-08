@@ -3,7 +3,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --time=18:00:00
 #SBATCH --nodes=1
-#SBATCH --gpus=b200:1
+#SBATCH --gpus=b200:2
 #SBATCH --mem=256G
 #SBATCH --partition=gpu_b200
 #SBATCH --output=%j_arabic_suicide_llm_b200.txt

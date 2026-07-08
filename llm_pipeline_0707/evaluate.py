@@ -35,7 +35,7 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 
-from tasks import messages_from_instruction, text_to_label
+from tasks import messages_from_instruction, text_to_label, set_chat_template_if_missing
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -193,6 +193,7 @@ def main() -> int:
     # Prefer the tokenizer saved with the adapter (identical special tokens).
     tok_src = args.adapter if args.adapter else args.model
     tokenizer = AutoTokenizer.from_pretrained(tok_src, trust_remote_code=True)
+    set_chat_template_if_missing(tokenizer)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"  # left padding for batched generation

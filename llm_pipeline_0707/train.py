@@ -39,7 +39,7 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
-from tasks import messages_from_instruction
+from tasks import messages_from_instruction, set_chat_template_if_missing
 
 # LoRA target modules for Llama/Qwen-style attention+MLP blocks.
 QWEN_TARGET_MODULES = [
@@ -155,6 +155,7 @@ def main() -> int:
     print(f"torch sees {torch.cuda.device_count()} GPU(s); 4-bit={use_4bit}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    set_chat_template_if_missing(tokenizer)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"

@@ -48,6 +48,47 @@ TASKS: dict[str, dict[str, str]] = {
 }
 
 
+# AceGPT-v2 (Llama-3-based, FreedomIntelligence) ships no chat_template but was
+# trained on a plain "<User>: ... <Assistant>: ..." format with no system role
+# (see its model card). We fold the system prompt into the first user turn and
+# terminate each assistant turn with eos_token. Rendered form:
+#
+#   <User>: {system}\n\n{user} <Assistant>: {answer}{eos}
+#
+# NOTE: the generation prompt ends at "<Assistant>:" with NO trailing space; the
+# space that separates the marker from the answer is emitted as part of the
+# assistant turn instead. This keeps the tokenized prompt an exact *token-level*
+# prefix of the full sequence under Llama-3 BPE (a trailing prompt space would
+# otherwise merge with the first answer token, corrupting train.py's label mask).
+ACEGPT_CHAT_TEMPLATE = (
+    "{%- for message in messages -%}"
+    "{%- if message['role'] == 'system' -%}"
+    "{{ '<User>: ' + message['content'] + '\n\n' }}"
+    "{%- elif message['role'] == 'user' -%}"
+    "{%- if loop.first -%}{{ '<User>: ' }}{%- endif -%}"
+    "{{ message['content'] }}"
+    "{%- elif message['role'] == 'assistant' -%}"
+    "{{ ' <Assistant>: ' + message['content'] + eos_token }}"
+    "{%- endif -%}"
+    "{%- endfor -%}"
+    "{%- if add_generation_prompt -%}{{ ' <Assistant>:' }}{%- endif -%}"
+)
+
+
+def set_chat_template_if_missing(tokenizer) -> None:
+    """Ensure the tokenizer can render chat messages.
+
+    Some fine-tunes (e.g. AceGPT-v2) do not ship a ``chat_template``, which makes
+    ``apply_chat_template`` raise. When one is missing we install a template that
+    matches the model's documented prompt format so train.py / evaluate.py format
+    prompts identically. Models that already carry a template are left untouched,
+    so this is a no-op for Qwen/Llama-Instruct and friends.
+    """
+    if getattr(tokenizer, "chat_template", None):
+        return
+    tokenizer.chat_template = ACEGPT_CHAT_TEMPLATE
+
+
 def label_to_text(label: int) -> str:
     return POSITIVE if int(label) == 1 else NEGATIVE
 
