@@ -84,7 +84,7 @@ written once). `run_all.sh` uses this to collect all 5 tasks into
 
 ## Notes
 - 4-bit QLoRA is on by default and requires a GPU; pass `--no-4bit` on CPU/debug.
-- Transcripts are truncated to `--max-len` (default 2048) tokens, keeping the
+- Transcripts are truncated to `--max-len` (default 4096) tokens, keeping the
   answer; raise it for the 14B model if you have memory.
 - Task hyperparameters (LoRA r/alpha, lr, epochs, batch size) are `train.py` CLI
   flags — tune per model.

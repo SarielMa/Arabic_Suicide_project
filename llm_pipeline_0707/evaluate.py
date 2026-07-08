@@ -172,7 +172,7 @@ def parse_args() -> argparse.Namespace:
         help="Append this run's metrics as one row to a shared CSV "
         "(header written once). Ideal for collecting a cluster sweep.",
     )
-    p.add_argument("--max-len", type=int, default=2048)
+    p.add_argument("--max-len", type=int, default=4096)
     p.add_argument("--max-new-tokens", type=int, default=8)
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--no-4bit", action="store_true")
