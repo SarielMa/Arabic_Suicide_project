@@ -12,13 +12,14 @@ cd "$(dirname "$0")"
 
 MODELS_FILE="${MODELS_FILE:-models.txt}"
 export TRUNCATION="${TRUNCATION:-head}"
+export CHUNKING="${CHUNKING:-0}"  # 1 = full transcript via chunk+pool
 
 [[ -f "$MODELS_FILE" ]] || { echo "Missing model list: $MODELS_FILE" >&2; exit 1; }
 
 mapfile -t MODELS < <(grep -vE '^[[:space:]]*(#|$)' "$MODELS_FILE")
 [[ ${#MODELS[@]} -gt 0 ]] || { echo "No models found in $MODELS_FILE" >&2; exit 1; }
 
-echo "TRUNCATION=${TRUNCATION}"
+echo "TRUNCATION=${TRUNCATION}  CHUNKING=${CHUNKING}"
 echo "Models (${#MODELS[@]}):"
 printf '  %s\n' "${MODELS[@]}"
 

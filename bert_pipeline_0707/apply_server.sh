@@ -11,8 +11,14 @@
 
 set -euo pipefail
 
-# Which end of long (>512 token) transcripts to keep: head | tail.
-# Override at submit time: sbatch --export=ALL,TRUNCATION=tail apply_server.sh
+# ==== Long-transcript handling (transcripts far exceed BERT's 512-token cap) ====
+# Edit these two values directly, then just `sbatch apply_server.sh`.
+#   CHUNKING   = 1 -> read the FULL transcript (512-token windows + pooling)
+#                0 -> truncate to 512 tokens
+#   TRUNCATION = head | tail  (which end to keep; also picks the kept windows
+#                when a transcript needs more than max_chunks windows)
+# (Both still accept a submit-time override, e.g. --export=ALL,CHUNKING=0.)
+export CHUNKING="${CHUNKING:-1}"
 export TRUNCATION="${TRUNCATION:-head}"
 
 REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/bert_pipeline_0707"
@@ -88,7 +94,7 @@ export NUM_GPUS
 
 echo "REPO_ROOT=${REPO_ROOT}"
 echo "PIPELINE_SH=${PIPELINE_SH}"
-echo "TRUNCATION=${TRUNCATION}"
+echo "TRUNCATION=${TRUNCATION}  CHUNKING=${CHUNKING}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "NUM_GPUS=${NUM_GPUS}"
 

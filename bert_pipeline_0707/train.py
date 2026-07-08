@@ -42,6 +42,12 @@ from transformers import (
 from tasks import TASK_KEYS
 from data_utils import load_split, maybe_arabert_preprocessor, preprocess_texts
 from metrics import compute_metrics
+from chunk_model import (
+    ChunkCollator,
+    ChunkDataset,
+    ChunkedModelForSequenceClassification,
+    build_chunks,
+)
 
 
 class TokenizedDataset(torch.utils.data.Dataset):
@@ -102,6 +108,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--truncation", choices=["head", "tail"], default="head",
                    help="Keep the start (head) or end (tail) of long transcripts.")
+    p.add_argument("--chunking", action="store_true",
+                   help="Read the FULL transcript by splitting into 512-token "
+                        "windows and mean-pooling their [CLS] vectors.")
+    p.add_argument("--max-chunks", type=int, default=6,
+                   help="Max 512-token windows per transcript when --chunking.")
     p.add_argument("--class-weights", choices=["balanced", "none"], default="balanced")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
@@ -119,10 +130,17 @@ def main() -> int:
     tokenizer.truncation_side = "right" if args.truncation == "head" else "left"
 
     preprocessor = maybe_arabert_preprocessor(args.model)
+    print(f"Mode: {'chunking (max_chunks=%d)' % args.max_chunks if args.chunking else 'truncation (%s)' % args.truncation}")
 
     def load(split):
         texts, labels, _ = load_split(args.data_dir, args.task, split)
         texts = preprocess_texts(texts, preprocessor)
+        if args.chunking:
+            chunked = [
+                build_chunks(t, tokenizer, args.max_length, args.max_chunks, args.truncation)
+                for t in texts
+            ]
+            return ChunkDataset(chunked, labels), labels
         enc = tokenizer(texts, truncation=True, max_length=args.max_length)
         return TokenizedDataset(enc, labels), labels
 
@@ -139,9 +157,11 @@ def main() -> int:
         class_weights = torch.tensor(w, dtype=torch.float)
         print(f"Class weights (0,1): {class_weights.tolist()}")
 
-    model = AutoModelForSequenceClassification.from_pretrained(
-        args.model, num_labels=2
-    )
+    if args.chunking:
+        model = ChunkedModelForSequenceClassification.from_encoder(args.model, num_labels=2)
+        model.class_weights = class_weights  # loss handled inside the model
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=2)
 
     training_args = TrainingArguments(
         output_dir=str(args.output_dir),
@@ -163,16 +183,29 @@ def main() -> int:
         seed=args.seed,
     )
 
-    trainer = WeightedTrainer(
-        class_weights=class_weights,
-        model=model,
-        args=training_args,
-        train_dataset=train_ds,
-        eval_dataset=eval_ds,
-        tokenizer=tokenizer,
-        data_collator=DataCollatorWithPadding(tokenizer),
-        compute_metrics=hf_compute_metrics,
-    )
+    if args.chunking:
+        # The chunked model computes the (weighted) loss internally, so a plain
+        # Trainer is used with the chunk collator.
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            tokenizer=tokenizer,
+            data_collator=ChunkCollator(tokenizer),
+            compute_metrics=hf_compute_metrics,
+        )
+    else:
+        trainer = WeightedTrainer(
+            class_weights=class_weights,
+            model=model,
+            args=training_args,
+            train_dataset=train_ds,
+            eval_dataset=eval_ds,
+            tokenizer=tokenizer,
+            data_collator=DataCollatorWithPadding(tokenizer),
+            compute_metrics=hf_compute_metrics,
+        )
     trainer.train()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)

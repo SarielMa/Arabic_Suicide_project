@@ -13,6 +13,9 @@ set -euo pipefail
 MODEL="${1:-CAMeL-Lab/bert-base-arabic-camelbert-da}"
 RUN_NAME="${2:-$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')}"
 TRUNCATION="${TRUNCATION:-head}"
+# CHUNKING=1 reads the FULL transcript (512-token windows + [CLS] mean-pool).
+CHUNKING="${CHUNKING:-0}"
+CHUNK_FLAG=""; [[ "$CHUNKING" == "1" ]] && CHUNK_FLAG="--chunking"
 
 TASKS=(
   wish_to_be_dead
@@ -26,9 +29,10 @@ for TASK in "${TASKS[@]}"; do
   OUT="runs/${RUN_NAME}/${TASK}"
   echo "================ TRAIN: ${TASK} (${MODEL}) ================"
   python train.py --task "$TASK" --model "$MODEL" \
-      --truncation "$TRUNCATION" --output-dir "$OUT"
+      --truncation "$TRUNCATION" $CHUNK_FLAG --output-dir "$OUT"
 
   echo "================ EVAL:  ${TASK} (${MODEL}) ================"
+  # Chunking is auto-detected from the model's run_config.json.
   python evaluate.py --task "$TASK" --model "$OUT" --model-name "$MODEL" \
       --truncation "$TRUNCATION" --out "${OUT}/eval" \
       --summary-csv "runs/${RUN_NAME}/summary.csv"

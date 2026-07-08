@@ -26,6 +26,11 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from tasks import TASK_KEYS
 from data_utils import load_split, maybe_arabert_preprocessor, preprocess_texts
+from chunk_model import (
+    ChunkCollator,
+    ChunkedModelForSequenceClassification,
+    build_chunks,
+)
 from metrics import (
     append_summary_csv,
     compute_metrics,
@@ -50,6 +55,26 @@ def predict(model, tokenizer, texts, max_length, batch_size):
     return preds
 
 
+@torch.no_grad()
+def predict_chunked(model, tokenizer, texts, max_length, max_chunks, truncation, batch_size):
+    device = next(model.parameters()).device
+    collator = ChunkCollator(tokenizer)
+    preds = []
+    for start in range(0, len(texts), batch_size):
+        batch_texts = texts[start : start + batch_size]
+        batch = [
+            {"chunks": build_chunks(t, tokenizer, max_length, max_chunks, truncation),
+             "label": 0}
+            for t in batch_texts
+        ]
+        enc = collator(batch)
+        enc = {k: v.to(device) for k, v in enc.items() if k != "labels"}
+        logits = model(**enc).logits
+        preds.extend(logits.argmax(dim=-1).cpu().tolist())
+        print(f"  predicted {min(start + batch_size, len(texts))}/{len(texts)}")
+    return preds
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--task", required=True, choices=TASK_KEYS)
@@ -60,6 +85,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--summary-csv", type=Path, default=None)
     p.add_argument("--max-length", type=int, default=512)
     p.add_argument("--truncation", choices=["head", "tail"], default="head")
+    p.add_argument("--chunking", action="store_true",
+                   help="Force chunked inference. Auto-detected from the model's "
+                        "run_config.json if omitted.")
+    p.add_argument("--max-chunks", type=int, default=6)
     p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--model-name", default=None,
                    help="Name to record in the CSV (defaults to --model).")
@@ -72,9 +101,22 @@ def main() -> int:
     print(f"torch sees {torch.cuda.device_count()} GPU(s)")
     use_cuda = torch.cuda.is_available()
 
+    # Auto-detect chunking / truncation from the model's saved run_config.json.
+    chunking, max_chunks, truncation = args.chunking, args.max_chunks, args.truncation
+    cfg_path = Path(args.model) / "run_config.json"
+    if cfg_path.exists():
+        cfg = json.loads(cfg_path.read_text())
+        chunking = args.chunking or bool(cfg.get("chunking"))
+        max_chunks = cfg.get("max_chunks", max_chunks)
+        truncation = cfg.get("truncation", truncation)
+    print(f"Mode: {'chunking (max_chunks=%d)' % max_chunks if chunking else 'truncation (%s)' % truncation}")
+
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    tokenizer.truncation_side = "right" if args.truncation == "head" else "left"
-    model = AutoModelForSequenceClassification.from_pretrained(args.model)
+    tokenizer.truncation_side = "right" if truncation == "head" else "left"
+    if chunking:
+        model = ChunkedModelForSequenceClassification.from_pretrained(args.model)
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(args.model)
     if use_cuda:
         model = model.cuda()
     model.eval()
@@ -87,7 +129,13 @@ def main() -> int:
     texts = preprocess_texts(texts, preprocessor)
     print(f"Evaluating {len(texts)} examples with {args.model}")
 
-    preds = predict(model, tokenizer, texts, args.max_length, args.batch_size)
+    if chunking:
+        preds = predict_chunked(
+            model, tokenizer, texts, args.max_length, max_chunks,
+            truncation, args.batch_size,
+        )
+    else:
+        preds = predict(model, tokenizer, texts, args.max_length, args.batch_size)
 
     metrics = compute_metrics(labels, preds)
     metrics["task"] = args.task

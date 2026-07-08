@@ -57,7 +57,11 @@ bash run_zeroshot.sh Qwen/Qwen2.5-14B-Instruct  qwen2.5-14b
 Single-task zero-shot: run `evaluate.py` without `--adapter`.
 
 ## Cluster (SLURM, B200)
-Edit `models.txt` to choose which models to run, then submit:
+Compute nodes may lack internet, so **prefetch models on the login node first**:
+```bash
+python prefetch_models.py   # downloads every model in models.txt into the HF cache
+```
+Then edit `models.txt` to choose which models to run, and submit:
 ```bash
 sbatch apply_server.sh                              # MODE=both (zero-shot + SFT)
 sbatch --export=ALL,MODE=zeroshot apply_server.sh   # zero-shot only

@@ -42,10 +42,19 @@ bash run_pipeline.sh
 ```
 
 ## Cluster (SLURM, B200)
+Compute nodes may lack internet, so **prefetch models on the login node first**:
 ```bash
-sbatch apply_server.sh                              # head truncation (default)
-sbatch --export=ALL,TRUNCATION=tail apply_server.sh # keep end of transcripts
+python prefetch_models.py   # downloads every model in models.txt into the HF cache
+sbatch apply_server.sh      # uses the settings at the top of apply_server.sh
 ```
+Long-transcript handling is set by two variables at the top of `apply_server.sh`
+(edit them directly — no submit-time flags needed):
+- `CHUNKING=1` (default) reads the full transcript via 512-token windows + pooling;
+  set `0` for plain 512-token truncation.
+- `TRUNCATION=head|tail` picks which end to keep.
+
+They still accept an override if you prefer, e.g.
+`sbatch --export=ALL,CHUNKING=0 apply_server.sh`.
 
 ## Metrics
 Same as the LLM pipeline: per-class precision/recall/F1, macro & weighted,
