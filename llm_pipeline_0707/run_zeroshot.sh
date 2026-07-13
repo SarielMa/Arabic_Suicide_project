@@ -11,6 +11,9 @@ set -euo pipefail
 
 MODEL="${1:-Qwen/Qwen2.5-1.5B-Instruct}"
 RUN_NAME="${2:-$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')}"
+# Same knobs as run_all.sh; defaults reproduce the original zero-shot sweep.
+RUNS_DIR="${RUNS_DIR:-runs}"
+EVAL_ARGS="${EVAL_ARGS:-}"
 
 TASKS=(
   wish_to_be_dead
@@ -24,14 +27,14 @@ TASKS=(
 python prepare_data.py
 
 for TASK in "${TASKS[@]}"; do
-  OUT="runs/zeroshot/${RUN_NAME}/${TASK}"
+  OUT="${RUNS_DIR}/zeroshot/${RUN_NAME}/${TASK}"
   echo "================ ZERO-SHOT EVAL: ${TASK} (${MODEL}) ================"
   # No --adapter => evaluate the base model directly (no fine-tuning).
   python evaluate.py --task "$TASK" --model "$MODEL" \
       --out "${OUT}/eval" \
-      --summary-csv "runs/zeroshot/${RUN_NAME}/summary.csv"
+      --summary-csv "${RUNS_DIR}/zeroshot/${RUN_NAME}/summary.csv" ${EVAL_ARGS}
 done
 
 echo "Zero-shot done for ${MODEL}."
-echo "Per-task metrics: runs/zeroshot/${RUN_NAME}/<task>/eval/metrics.{json,csv}"
-echo "Combined summary: runs/zeroshot/${RUN_NAME}/summary.csv"
+echo "Per-task metrics: ${RUNS_DIR}/zeroshot/${RUN_NAME}/<task>/eval/metrics.{json,csv}"
+echo "Combined summary: ${RUNS_DIR}/zeroshot/${RUN_NAME}/summary.csv"

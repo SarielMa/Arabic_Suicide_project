@@ -109,6 +109,38 @@ def text_to_label(text: str) -> int | None:
     return None
 
 
+def answer_first_token_ids(tokenizer) -> tuple[int, int]:
+    """Return the (yes_id, no_id) token ids the model emits *first* in its answer.
+
+    Not simply ``encode("Yes")``: under AceGPT's template the assistant turn opens
+    with a leading space, so the first answer token is " Yes", a different id than
+    "Yes". We therefore render a dummy example through the chat template both with
+    and without the answer, and read off the first token past the generation
+    prompt---the same construction train.py uses to place its label mask, so the
+    id we score is exactly the id that was trained.
+    """
+    messages = messages_from_instruction("dummy question", "dummy transcript")
+    prompt_ids = tokenizer.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=True
+    )
+    ids = {}
+    for label, word in ((1, POSITIVE), (0, NEGATIVE)):
+        full_ids = tokenizer.apply_chat_template(
+            messages + [{"role": "assistant", "content": word}],
+            add_generation_prompt=False,
+            tokenize=True,
+        )
+        if full_ids[: len(prompt_ids)] != list(prompt_ids):
+            raise ValueError(
+                "Generation prompt is not a token-level prefix of the full sequence "
+                f"for answer {word!r}; first-token scoring would be misaligned."
+            )
+        ids[label] = full_ids[len(prompt_ids)]
+    if ids[1] == ids[0]:
+        raise ValueError("Yes and No map to the same first token; cannot score.")
+    return ids[1], ids[0]
+
+
 def build_instruction(question: str) -> str:
     return f"{question}\nAnswer with exactly one word: Yes or No."
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=arabic_suicide_llm
 #SBATCH --mail-type=ALL
-#SBATCH --time=10:00:00
+#SBATCH --time=18:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=b200:2
 #SBATCH --mem=256G
@@ -11,12 +11,22 @@
 
 set -euo pipefail
 
-# What to run: both (zero-shot + SFT) | zeroshot | sft.
-# Override at submit time with:  sbatch --export=ALL,MODE=zeroshot apply_server.sh
+# What to run. Override at submit time with:
+#   sbatch --export=ALL,MODE=<mode> apply_server.sh
+#
+# Baseline arms -- these WRITE INTO runs/ and overwrite the published results:
+#   both      zero-shot + SFT, unweighted loss, greedy decoding  (the original run)
+#   zeroshot  zero-shot only
+#   sft       SFT only
+#
+# Class-imbalance experiment -- these never touch runs/:
+#   balanced  class-weighted SFT + prior-thresholded decoding  -> runs_balanced/
+#   rescore   re-score the EXISTING runs/ adapters, no training -> runs_scored/
 MODE="${MODE:-both}"
 
 REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/llm_pipeline_0707"
 PIPELINE_SH="${REPO_ROOT}/run_pipeline.sh"
+BALANCED_SH="${REPO_ROOT}/run_balanced.sh"
 
 for var in CONDA_EXE CONDA_PREFIX CONDA_PREFIX_1 CONDA_PREFIX_2 CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER CONDA_SHLVL CONDA_PYTHON_EXE CONDA_PKGS_DIRS CONDA_ENVS_PATH _CE_CONDA _CE_M _CONDA_EXE _CONDA_ROOT; do
   unset "${var}" || true
@@ -71,7 +81,28 @@ python -c "import torch; print('torch cuda:', torch.version.cuda); print('gpus:'
 nvidia-smi
 
 cd "${REPO_ROOT}"
-[[ -f "${PIPELINE_SH}" ]] || { echo "Missing pipeline script: ${PIPELINE_SH}" >&2; exit 1; }
+
+case "${MODE}" in
+  both|zeroshot|sft)
+    [[ -f "${PIPELINE_SH}" ]] || { echo "Missing pipeline script: ${PIPELINE_SH}" >&2; exit 1; }
+    # Guard the published baseline: these modes write into runs/, and models.txt now
+    # lists all five models, so an accidental submit would retrain over the results
+    # the paper table is built from. Set FORCE_OVERWRITE=1 to really do it.
+    if [[ -d "${REPO_ROOT}/runs" && "${FORCE_OVERWRITE:-0}" != "1" ]]; then
+      echo "REFUSING to run MODE=${MODE}: it would overwrite the existing runs/ tree." >&2
+      echo "  For the class-imbalance experiment use MODE=balanced or MODE=rescore." >&2
+      echo "  To really re-run the baseline: sbatch --export=ALL,MODE=${MODE},FORCE_OVERWRITE=1 apply_server.sh" >&2
+      exit 1
+    fi
+    ;;
+  balanced|rescore)
+    [[ -f "${BALANCED_SH}" ]] || { echo "Missing script: ${BALANCED_SH}" >&2; exit 1; }
+    ;;
+  *)
+    echo "Unknown MODE '${MODE}' (both | zeroshot | sft | balanced | rescore)" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   NUM_GPUS=$(awk -F',' '{print NF}' <<< "${CUDA_VISIBLE_DEVICES}")
@@ -92,5 +123,9 @@ echo "MODE=${MODE}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "NUM_GPUS=${NUM_GPUS}"
 
-# run_pipeline.sh reads models.txt and loops zero-shot / SFT per model.
-bash "${PIPELINE_SH}" "${MODE}"
+# Both drivers read models.txt and loop over every model listed there.
+case "${MODE}" in
+  balanced) bash "${BALANCED_SH}" train ;;
+  rescore)  bash "${BALANCED_SH}" rescore ;;
+  *)        bash "${PIPELINE_SH}" "${MODE}" ;;
+esac

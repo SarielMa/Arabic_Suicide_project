@@ -55,14 +55,42 @@ def read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
+def positive_weight(records, mode: str, alpha: float, cap: float) -> float:
+    """Loss weight applied to positive (``Yes``) examples.
+
+    ``balanced`` gives the inverse-frequency weight (N_neg/N_pos)^alpha, so the two
+    classes contribute equally to the loss at alpha=1 and the all-``No`` shortcut
+    stops being the cheapest descent direction. Capped because the rarest task (PI:
+    35 positives in 249) would otherwise weight a single positive 6x, which at this
+    sample size is enough to flip the model into over-triggering.
+    """
+    if mode == "none":
+        return 1.0
+    n_pos = sum(int(r["label"]) for r in records)
+    n_neg = len(records) - n_pos
+    if n_pos == 0 or n_neg == 0:
+        print(f"[class-weight] degenerate split (pos={n_pos}, neg={n_neg}); using 1.0")
+        return 1.0
+    weight = (n_neg / n_pos) ** alpha
+    capped = min(weight, cap)
+    print(
+        f"[class-weight] pos={n_pos} neg={n_neg} ratio={n_neg / n_pos:.2f} "
+        f"alpha={alpha} -> w_pos={capped:.3f}"
+        + (f" (capped from {weight:.3f})" if capped < weight else "")
+    )
+    return capped
+
+
 class SFTDataset(Dataset):
     """Tokenizes instruction examples with prompt tokens masked out."""
 
-    def __init__(self, records, tokenizer, max_len: int, max_input_tokens: int):
+    def __init__(self, records, tokenizer, max_len: int, max_input_tokens: int,
+                 pos_weight: float = 1.0):
         self.records = records
         self.tok = tokenizer
         self.max_len = max_len
         self.max_input_tokens = max_input_tokens
+        self.pos_weight = pos_weight
 
     def __len__(self) -> int:
         return len(self.records)
@@ -95,6 +123,7 @@ class SFTDataset(Dataset):
             "input_ids": full_ids,
             "attention_mask": [1] * len(full_ids),
             "labels": labels,
+            "weight": self.pos_weight if int(rec["label"]) == 1 else 1.0,
         }
 
 
@@ -119,7 +148,44 @@ class PadCollator:
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(attn, dtype=torch.long),
             "labels": torch.tensor(labels, dtype=torch.long),
+            "weight": torch.tensor([x["weight"] for x in batch], dtype=torch.float),
         }
+
+
+class WeightedTrainer(Trainer):
+    """Trainer whose per-example loss is scaled by that example's class weight.
+
+    The base Trainer averages cross-entropy over all answer tokens in the batch,
+    which is what lets the majority class dominate. Here we average within each
+    example first, then take a weighted mean across the batch, so a positive
+    example counts ``w_pos`` times as much as a negative one. Normalizing by the
+    weight sum (rather than the batch size) keeps the loss scale---and hence the
+    effective learning rate---comparable to the unweighted baseline.
+    """
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        weights = inputs.pop("weight")
+        labels = inputs["labels"]
+        outputs = model(**{k: v for k, v in inputs.items() if k != "labels"})
+
+        shift_logits = outputs.logits[:, :-1, :]
+        shift_labels = labels[:, 1:]
+        mask = shift_labels != IGNORE_INDEX
+
+        token_loss = torch.nn.functional.cross_entropy(
+            shift_logits.reshape(-1, shift_logits.size(-1)).float(),
+            shift_labels.reshape(-1),
+            ignore_index=IGNORE_INDEX,
+            reduction="none",
+        ).view(shift_labels.shape)
+
+        # Mean over each example's answer tokens, then a weighted mean over the batch.
+        n_tokens = mask.sum(dim=1).clamp(min=1)
+        per_example = (token_loss * mask).sum(dim=1) / n_tokens
+        weights = weights.to(per_example.device, dtype=per_example.dtype)
+        loss = (per_example * weights).sum() / weights.sum().clamp(min=1e-8)
+
+        return (loss, outputs) if return_outputs else loss
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,6 +204,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-dropout", type=float, default=0.05)
     p.add_argument("--no-4bit", action="store_true", help="Disable 4-bit QLoRA.")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--class-weight",
+        choices=["none", "balanced"],
+        default="none",
+        help="'balanced' weights positive examples by (N_neg/N_pos)^alpha to "
+        "counter majority-class collapse; 'none' reproduces the baseline run.",
+    )
+    p.add_argument("--class-weight-alpha", type=float, default=1.0)
+    p.add_argument("--class-weight-cap", type=float, default=4.0,
+                   help="Upper bound on the positive weight.")
     return p.parse_args()
 
 
@@ -194,11 +270,18 @@ def main() -> int:
     model.print_trainable_parameters()
 
     train_records = read_jsonl(args.data_dir / args.task / "train.jsonl")
+    pos_weight = positive_weight(
+        train_records,
+        mode=args.class_weight,
+        alpha=args.class_weight_alpha,
+        cap=args.class_weight_cap,
+    )
     train_ds = SFTDataset(
         train_records,
         tokenizer,
         max_len=args.max_len,
         max_input_tokens=args.max_len - 128,
+        pos_weight=pos_weight,
     )
     print(f"Training examples: {len(train_ds)}")
 
@@ -220,7 +303,11 @@ def main() -> int:
         seed=args.seed,
     )
 
-    trainer = Trainer(
+    # Plain Trainer when unweighted, so the baseline arm stays bit-for-bit what it
+    # was: WeightedTrainer averages per example rather than per token, which is a
+    # different loss even at w_pos=1 when examples differ in answer length.
+    trainer_cls = Trainer if args.class_weight == "none" else WeightedTrainer
+    trainer = trainer_cls(
         model=model,
         args=training_args,
         train_dataset=train_ds,
@@ -233,7 +320,8 @@ def main() -> int:
     tokenizer.save_pretrained(str(args.output_dir))
     # Record what produced this run for reproducibility / evaluation.
     (args.output_dir / "run_config.json").write_text(
-        json.dumps({"base_model": args.model, "task": args.task, **vars(args)},
+        json.dumps({"base_model": args.model, "task": args.task,
+                    "pos_weight": pos_weight, **vars(args)},
                    default=str, indent=2),
         encoding="utf-8",
     )
