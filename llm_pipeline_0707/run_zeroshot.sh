@@ -13,6 +13,7 @@ MODEL="${1:-Qwen/Qwen2.5-1.5B-Instruct}"
 RUN_NAME="${2:-$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')}"
 # Same knobs as run_all.sh; defaults reproduce the original zero-shot sweep.
 RUNS_DIR="${RUNS_DIR:-runs}"
+DATA_DIR="${DATA_DIR:-processed_datasets}"
 EVAL_ARGS="${EVAL_ARGS:-}"
 
 TASKS=(
@@ -31,7 +32,7 @@ for TASK in "${TASKS[@]}"; do
   echo "================ ZERO-SHOT EVAL: ${TASK} (${MODEL}) ================"
   # No --adapter => evaluate the base model directly (no fine-tuning).
   python evaluate.py --task "$TASK" --model "$MODEL" \
-      --out "${OUT}/eval" \
+      --out "${OUT}/eval" --data-dir "$DATA_DIR" \
       --summary-csv "${RUNS_DIR}/zeroshot/${RUN_NAME}/summary.csv" ${EVAL_ARGS}
 done
 

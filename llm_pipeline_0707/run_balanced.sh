@@ -34,12 +34,14 @@ CLASS_WEIGHT_ALPHA="${CLASS_WEIGHT_ALPHA:-1.0}"  # w_pos = (N_neg/N_pos)^alpha
 CLASS_WEIGHT_CAP="${CLASS_WEIGHT_CAP:-4.0}"    # upper bound on w_pos
 DECISION="${DECISION:-prob}"                   # prob | greedy
 THRESHOLD="${THRESHOLD:-prior}"                # 'prior' or a float in (0,1)
+DATA_DIR="${DATA_DIR:-processed_datasets}"
 BALANCED_RUNS_DIR="${BALANCED_RUNS_DIR:-runs_balanced}"
 SCORED_RUNS_DIR="${SCORED_RUNS_DIR:-runs_scored}"
 
 echo "--- imbalance experiment config ---"
 echo "  class weight : ${CLASS_WEIGHT} (alpha=${CLASS_WEIGHT_ALPHA}, cap=${CLASS_WEIGHT_CAP})"
 echo "  decision     : ${DECISION} (threshold=${THRESHOLD})"
+echo "  data dir     : ${DATA_DIR}"
 echo "  models file  : ${MODELS_FILE}"
 echo "-----------------------------------"
 
@@ -62,7 +64,7 @@ case "$MODE" in
     for MODEL in "${MODELS[@]}"; do
       MODEL="$(echo "$MODEL" | xargs)"
       RUN_NAME="$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')"
-      RUNS_DIR="${BALANCED_RUNS_DIR}" \
+      RUNS_DIR="${BALANCED_RUNS_DIR}" DATA_DIR="${DATA_DIR}" \
       TRAIN_ARGS="--class-weight ${CLASS_WEIGHT} --class-weight-alpha ${CLASS_WEIGHT_ALPHA} --class-weight-cap ${CLASS_WEIGHT_CAP}" \
       EVAL_ARGS="--decision ${DECISION} --threshold ${THRESHOLD}" \
         bash run_all.sh "$MODEL" "$RUN_NAME"
@@ -84,7 +86,7 @@ case "$MODE" in
         OUT="${SCORED_RUNS_DIR}/${RUN_NAME}/${TASK}"
         echo "======== RESCORE: ${TASK} (${MODEL}) ========"
         python evaluate.py --task "$TASK" --model "$MODEL" \
-            --adapter "$ADAPTER" --out "${OUT}/eval" \
+            --adapter "$ADAPTER" --out "${OUT}/eval" --data-dir "${DATA_DIR}" \
             --decision "${DECISION}" --threshold "${THRESHOLD}" \
             --summary-csv "${SCORED_RUNS_DIR}/${RUN_NAME}/summary.csv"
       done

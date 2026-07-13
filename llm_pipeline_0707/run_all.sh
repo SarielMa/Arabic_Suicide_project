@@ -23,6 +23,7 @@ set -euo pipefail
 MODEL="${1:-Qwen/Qwen2.5-1.5B-Instruct}"
 RUN_NAME="${2:-$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')}"
 RUNS_DIR="${RUNS_DIR:-runs}"
+DATA_DIR="${DATA_DIR:-processed_datasets}"
 TRAIN_ARGS="${TRAIN_ARGS:-}"
 EVAL_ARGS="${EVAL_ARGS:-}"
 
@@ -40,11 +41,12 @@ python prepare_data.py
 for TASK in "${TASKS[@]}"; do
   OUT="${RUNS_DIR}/${RUN_NAME}/${TASK}"
   echo "================ TRAIN: ${TASK} (${MODEL}) ================"
-  python train.py --task "$TASK" --model "$MODEL" --output-dir "$OUT" ${TRAIN_ARGS}
+  python train.py --task "$TASK" --model "$MODEL" --output-dir "$OUT" \
+      --data-dir "$DATA_DIR" ${TRAIN_ARGS}
 
   echo "================ EVAL:  ${TASK} (${MODEL}) ================"
   python evaluate.py --task "$TASK" --model "$MODEL" \
-      --adapter "$OUT" --out "${OUT}/eval" \
+      --adapter "$OUT" --out "${OUT}/eval" --data-dir "$DATA_DIR" \
       --summary-csv "${RUNS_DIR}/${RUN_NAME}/summary.csv" ${EVAL_ARGS}
 done
 
