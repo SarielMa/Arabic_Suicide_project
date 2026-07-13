@@ -36,6 +36,10 @@ printf '  %s\n' "${MODELS[@]}"
 python prepare_data.py
 
 for MODEL in "${MODELS[@]}"; do
+  # Strip leading/trailing whitespace (a stray space makes an invalid HF repo id).
+  MODEL="${MODEL#"${MODEL%%[![:space:]]*}"}"
+  MODEL="${MODEL%"${MODEL##*[![:space:]]}"}"
+  [[ -n "$MODEL" ]] || continue
   RUN_NAME="$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')"
   echo "############################################################"
   echo "# MODEL: ${MODEL}  (run name: ${RUN_NAME})"

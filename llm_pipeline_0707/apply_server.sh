@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=arabic_suicide_llm
 #SBATCH --mail-type=ALL
-#SBATCH --time=18:00:00
+#SBATCH --time=10:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=b200:2
 #SBATCH --mem=256G
