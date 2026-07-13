@@ -102,6 +102,18 @@ def check_translation(src: str, out: str) -> list[str]:
     return flags
 
 
+# A hard flag means the translation lost content the label depends on: the model
+# refused, summarized, truncated, or left the text in Arabic. Those are worth a
+# retry and must not enter the training data. The rest are cosmetic -- a dropped
+# <PERS> placeholder or a verbose-but-complete rendering changes no risk evidence,
+# and at 72B it is not worth re-decoding a transcript over.
+HARD_FLAGS = ("empty", "refusal", "too_short", "arabic_residue")
+
+
+def hard_flags(flags: list[str]) -> list[str]:
+    return [f for f in flags if f.split("(")[0] in HARD_FLAGS]
+
+
 def load_unique_transcripts(data_dir: Path) -> dict[str, str]:
     """file_id -> Arabic transcript, deduplicated across the five task datasets."""
     transcripts: dict[str, str] = {}
@@ -221,7 +233,7 @@ def main() -> int:
                     temperature=0.0 if attempt == 0 else 0.3,
                 )
                 flags = check_translation(src, english)
-                if not flags:
+                if not hard_flags(flags):
                     break
                 print(f"  [{fid}] attempt {attempt + 1} flagged: {flags}")
 

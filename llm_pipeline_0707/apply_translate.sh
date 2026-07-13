@@ -29,7 +29,7 @@ TRANSLATOR="Qwen/Qwen2.5-72B-Instruct"
 # sanitizes or refuses the self-harm content, the translation deletes exactly the
 # evidence the PI/SI/IM labels depend on, and the English experiment would be
 # measuring translation damage rather than language.
-PILOT_N=20
+PILOT_N=0
 
 # Re-attempts for a transcript whose translation fails the QC checks
 # (refusal, summarization, untranslated Arabic, dropped <PERS> tags).
@@ -37,7 +37,7 @@ RETRIES=2
 
 # Build processed_datasets_en/ after translating? Only meaningful on a full run,
 # and it will refuse to build if any translation is missing or flagged.
-BUILD_DATASETS=0
+BUILD_DATASETS=1
 # ===========================================================================
 
 REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/llm_pipeline_0707"

@@ -26,7 +26,7 @@ set -euo pipefail
 #             dead models or just a mis-set decision threshold. -> runs_scored/
 #   balanced  Arm A+B. Retrains every model with the class-weighted loss and
 #             evaluates with the corrected threshold. Full sweep. -> runs_balanced/
-EXPERIMENT="rescore"
+EXPERIMENT="balanced"
 
 # --- Arm A: training-side fix (used only when EXPERIMENT=balanced) ---
 # Positive examples get loss weight w_pos = (N_neg / N_pos)^ALPHA, capped at CAP.

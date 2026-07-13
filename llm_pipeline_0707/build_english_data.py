@@ -23,6 +23,8 @@ import argparse
 import json
 from pathlib import Path
 
+from translate import hard_flags
+
 
 def read_jsonl(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.open(encoding="utf-8") if l.strip()]
@@ -41,8 +43,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     translations = {r["file_id"]: r for r in read_jsonl(args.pred)}
-    flagged = {fid for fid, r in translations.items() if r["flags"]}
-    print(f"Translations: {len(translations)}  (flagged: {len(flagged)})")
+    # Only hard flags (refusal / summarization / truncation / untranslated Arabic)
+    # block the build: those delete the evidence the label rests on. A soft flag --
+    # a dropped <PERS> placeholder, a verbose rendering -- leaves the risk content
+    # intact and is not a reason to withhold the transcript from training.
+    damaged = {fid for fid, r in translations.items() if hard_flags(r["flags"])}
+    soft = {fid for fid, r in translations.items() if r["flags"] and fid not in damaged}
+    print(f"Translations: {len(translations)}  "
+          f"(content-damaged: {len(damaged)}, cosmetic flags: {len(soft)})")
 
     tasks = sorted(p for p in args.data_dir.iterdir() if p.is_dir())
     missing: set[str] = set()
@@ -58,9 +66,10 @@ def main() -> int:
             f"{len(missing)} transcripts have no translation (e.g. "
             f"{sorted(missing)[:5]}). Finish translate.py before building."
         )
-    if flagged and not args.allow_flagged:
+    if damaged and not args.allow_flagged:
         raise SystemExit(
-            f"{len(flagged)} translations failed QC. Inspect them first:\n"
+            f"{len(damaged)} translations lost content (refusal / summarized / "
+            f"truncated / still Arabic). Inspect them first:\n"
             f"  python inspect_translations.py --pred {args.pred} --only-flagged --show 5\n"
             f"Then re-translate them, or pass --allow-flagged to include them anyway."
         )
