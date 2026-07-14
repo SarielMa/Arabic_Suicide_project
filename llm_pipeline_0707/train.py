@@ -181,16 +181,23 @@ class WeightedTrainer(Trainer):
         shift_labels = labels[:, 1:]
         mask = shift_labels != IGNORE_INDEX
 
+        # Only the answer tokens ("Yes"/"No" + template suffix, ~3 per example) carry
+        # loss; the other ~4000 positions are masked prompt. Select them *before* the
+        # cross-entropy: scoring the full grid would allocate an fp32
+        # [batch*seq, vocab] tensor -- ~10GB at seq=4096 -- of which all but a dozen
+        # rows are then multiplied by zero. Same arithmetic, ~1000x less memory.
+        rows, cols = mask.nonzero(as_tuple=True)
         token_loss = torch.nn.functional.cross_entropy(
-            shift_logits.reshape(-1, shift_logits.size(-1)).float(),
-            shift_labels.reshape(-1),
-            ignore_index=IGNORE_INDEX,
+            shift_logits[rows, cols].float(),
+            shift_labels[rows, cols],
             reduction="none",
-        ).view(shift_labels.shape)
+        )
 
         # Mean over each example's answer tokens, then a weighted mean over the batch.
         n_tokens = mask.sum(dim=1).clamp(min=1)
-        per_example = (token_loss * mask).sum(dim=1) / n_tokens
+        per_example = torch.zeros(
+            shift_labels.size(0), device=token_loss.device, dtype=token_loss.dtype
+        ).index_add(0, rows, token_loss) / n_tokens
         weights = weights.to(per_example.device, dtype=per_example.dtype)
         loss = (per_example * weights).sum() / weights.sum().clamp(min=1e-8)
 

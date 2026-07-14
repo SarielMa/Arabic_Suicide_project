@@ -87,3 +87,5 @@ PVminerLLM_qwen2.5_1.5b_instruct/
 **/checkpoint-*/README.md
 .codex
 meta_data.xlsx
+runs_balanced/
+translations/

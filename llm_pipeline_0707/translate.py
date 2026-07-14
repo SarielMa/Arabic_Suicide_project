@@ -93,9 +93,15 @@ def check_translation(src: str, out: str) -> list[str]:
     if not out.strip():
         flags.append("empty")
         return flags
-    if REFUSAL_PATTERNS.search(out[:400]):
-        flags.append("refusal")
     ratio = len(out) / max(len(src), 1)
+    # A refusal is short by definition -- the model declines instead of translating.
+    # The phrases themselves ("I'm sorry", "if you are in crisis", "please reach out
+    # to") are also what distressed callers and helpline staff actually say, so on a
+    # full-length output they are transcript content, not a refusal. Requiring a
+    # short output as well keeps this from firing on faithful translations of exactly
+    # the most emotional calls -- which would strip the positive class.
+    if REFUSAL_PATTERNS.search(out[:400]) and ratio < 0.9:
+        flags.append("refusal")
     # English of Arabic runs roughly 0.8-1.6x the source length. Far below that is
     # summarization or truncation -- i.e. exactly the label-destroying failure.
     if ratio < 0.55:

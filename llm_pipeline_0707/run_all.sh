@@ -40,6 +40,15 @@ python prepare_data.py
 
 for TASK in "${TASKS[@]}"; do
   OUT="${RUNS_DIR}/${RUN_NAME}/${TASK}"
+
+  # Resume: a finished task leaves an adapter and an eval. Skip it, so a job that
+  # died partway (node fault, wall clock) can simply be resubmitted instead of
+  # retraining every model from scratch. Delete the task dir to force a redo.
+  if [[ -f "${OUT}/adapter_model.safetensors" && -f "${OUT}/eval/metrics.json" ]]; then
+    echo "======== SKIP (already done): ${TASK} (${MODEL}) ========"
+    continue
+  fi
+
   echo "================ TRAIN: ${TASK} (${MODEL}) ================"
   python train.py --task "$TASK" --model "$MODEL" --output-dir "$OUT" \
       --data-dir "$DATA_DIR" ${TRAIN_ARGS}

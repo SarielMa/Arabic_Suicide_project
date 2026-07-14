@@ -29,6 +29,14 @@ python prepare_data.py
 
 for TASK in "${TASKS[@]}"; do
   OUT="${RUNS_DIR}/zeroshot/${RUN_NAME}/${TASK}"
+
+  # Resume, as in run_all.sh: skip a task that already has metrics, so a job killed
+  # by a node fault or the wall clock can be resubmitted without redoing the sweep.
+  if [[ -f "${OUT}/eval/metrics.json" ]]; then
+    echo "======== SKIP (already done): ${TASK} (${MODEL}) ========"
+    continue
+  fi
+
   echo "================ ZERO-SHOT EVAL: ${TASK} (${MODEL}) ================"
   # No --adapter => evaluate the base model directly (no fine-tuning).
   python evaluate.py --task "$TASK" --model "$MODEL" \
