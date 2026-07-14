@@ -14,8 +14,15 @@ refuse. A sanitized translation would delete the positive-class signal
 translation is checked (see check_translation) and anything suspicious is retried
 and then flagged; nothing is quietly accepted.
 
-Resumable: already-translated file_ids are skipped, so a timed-out job can be
-resubmitted and will pick up where it left off.
+Runs on vLLM. The transcripts are independent, so the whole corpus is handed to
+the engine at once and continuous batching keeps the GPUs saturated; the previous
+transformers path decoded one transcript at a time and left both B200s mostly idle.
+Weights are served in bf16 rather than 4-bit NF4: Qwen2.5-72B is ~145GB and two
+B200s hold 360GB, so the quantization was buying memory we already had while
+paying a dequantize cost on every forward pass.
+
+Resumable: already-translated file_ids are skipped, and results are appended after
+each chunk, so a timed-out job can be resubmitted and will pick up where it left off.
 
 Example::
 
@@ -34,7 +41,8 @@ import unicodedata
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, set_seed
+from transformers import AutoTokenizer
+from vllm import LLM, SamplingParams
 
 SYSTEM_PROMPT = (
     "You are a professional Arabic-to-English translator working on clinical "
@@ -142,26 +150,34 @@ def read_done(path: Path) -> dict[str, dict]:
 
 
 @torch.no_grad()
-def translate_one(model, tokenizer, transcript: str, max_new_tokens: int,
-                  temperature: float) -> str:
+def build_prompt(tokenizer, transcript: str) -> str:
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": USER_TEMPLATE.format(transcript=transcript)},
     ]
-    prompt = tokenizer.apply_chat_template(
+    return tokenizer.apply_chat_template(
         messages, add_generation_prompt=True, tokenize=False
     )
-    enc = tokenizer(prompt, return_tensors="pt").to(next(model.parameters()).device)
-    out = model.generate(
-        **enc,
-        max_new_tokens=max_new_tokens,
-        do_sample=temperature > 0,
-        temperature=temperature if temperature > 0 else None,
-        top_p=0.9 if temperature > 0 else None,
-        pad_token_id=tokenizer.pad_token_id,
+
+
+def translate_batch(llm, prompts: list[str], max_new_tokens: int,
+                    temperature: float, seed: int) -> list[str]:
+    """Translate a list of prompts in one vLLM call, preserving input order.
+
+    Attempt 0 is greedy (temperature=0), which reproduces the deterministic
+    behaviour of the old transformers path. Retries resample with a little
+    temperature -- re-running a greedy decode would only redraw the identical
+    bad text.
+    """
+    params = SamplingParams(
+        temperature=temperature,
+        top_p=0.9 if temperature > 0 else 1.0,
+        max_tokens=max_new_tokens,
+        seed=seed if temperature > 0 else None,
     )
-    gen = out[0, enc["input_ids"].shape[1]:]
-    return tokenizer.decode(gen, skip_special_tokens=True).strip()
+    outputs = llm.generate(prompts, params)
+    # vLLM returns results in the order of the prompts it was given.
+    return [o.outputs[0].text.strip() for o in outputs]
 
 
 def parse_args() -> argparse.Namespace:
@@ -175,16 +191,21 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-new-tokens", type=int, default=3072)
     p.add_argument("--retries", type=int, default=2,
                    help="Re-attempts for a transcript whose translation fails the checks.")
-    p.add_argument("--no-4bit", action="store_true")
     p.add_argument("--seed", type=int, default=42)
+    # --- vLLM engine ---
+    p.add_argument("--tensor-parallel-size", type=int, default=0,
+                   help="0 = use every visible GPU.")
+    p.add_argument("--max-model-len", type=int, default=8192,
+                   help="Longest transcript is ~3.7k tokens; +3k generated fits in 8k.")
+    p.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    p.add_argument("--chunk-size", type=int, default=64,
+                   help="Transcripts per write. Smaller = more resumable, no speed cost "
+                        "beyond a brief drain of the batch between chunks.")
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    set_seed(args.seed)
-    use_cuda = torch.cuda.is_available()
-    use_4bit = not args.no_4bit and use_cuda
 
     transcripts = load_unique_transcripts(args.data_dir)
     print(f"Unique transcripts across all tasks: {len(transcripts)}")
@@ -200,60 +221,68 @@ def main() -> int:
         return 0
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    quant_config = None
-    if use_4bit:
-        quant_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-        )
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        quantization_config=quant_config,
-        torch_dtype=torch.bfloat16 if use_cuda else torch.float32,
-        device_map="auto" if use_cuda else None,
+    tp_size = args.tensor_parallel_size or max(torch.cuda.device_count(), 1)
+    print(f"vLLM: tensor_parallel_size={tp_size} dtype=bfloat16 "
+          f"max_model_len={args.max_model_len}")
+    llm = LLM(
+        model=args.model,
+        tensor_parallel_size=tp_size,
+        dtype="bfloat16",
+        max_model_len=args.max_model_len,
+        gpu_memory_utilization=args.gpu_memory_utilization,
         trust_remote_code=True,
+        seed=args.seed,
     )
-    model.eval()
 
     n_flagged = 0
+    n_written = 0
     with args.out.open("a", encoding="utf-8") as handle:
-        for i, (fid, src) in enumerate(todo, 1):
-            english, flags = "", ["empty"]
-            for attempt in range(args.retries + 1):
-                # Retry greedily first; if that output is bad, resample with a little
-                # temperature rather than re-drawing the identical deterministic text.
-                english = translate_one(
-                    model, tokenizer, src,
-                    max_new_tokens=args.max_new_tokens,
-                    temperature=0.0 if attempt == 0 else 0.3,
-                )
-                flags = check_translation(src, english)
-                if not hard_flags(flags):
-                    break
-                print(f"  [{fid}] attempt {attempt + 1} flagged: {flags}")
+        for start in range(0, len(todo), args.chunk_size):
+            chunk = todo[start : start + args.chunk_size]
+            prompts = [build_prompt(tokenizer, src) for _, src in chunk]
 
-            if flags:
-                n_flagged += 1
-            rec = {
-                "file_id": fid,
-                "arabic": src,
-                "english": english,
-                "flags": flags,
-                "len_ratio": round(len(english) / max(len(src), 1), 3),
-                "arabic_ratio": round(arabic_ratio(english), 3),
-                "pers_src": src.count("<PERS>"),
-                "pers_out": english.count("<PERS>"),
-                "model": args.model,
-            }
-            handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            handle.flush()  # resumable even if the job is killed mid-sweep
-            status = "OK" if not flags else f"FLAGGED {flags}"
-            print(f"[{i}/{len(todo)}] {fid}  {len(src)}->{len(english)} chars  {status}")
+            # Attempt 0: one greedy pass over the whole chunk.
+            english = translate_batch(
+                llm, prompts, args.max_new_tokens, temperature=0.0, seed=args.seed
+            )
+            flags = [check_translation(src, en) for (_, src), en in zip(chunk, english)]
+
+            # Retries: re-decode only the transcripts whose translation lost content,
+            # again as one batch per round rather than one call per transcript.
+            for attempt in range(1, args.retries + 1):
+                bad = [i for i, f in enumerate(flags) if hard_flags(f)]
+                if not bad:
+                    break
+                for i in bad:
+                    print(f"  [{chunk[i][0]}] attempt {attempt} flagged: {flags[i]}")
+                retry_out = translate_batch(
+                    llm, [prompts[i] for i in bad], args.max_new_tokens,
+                    temperature=0.3, seed=args.seed + attempt,
+                )
+                for i, en in zip(bad, retry_out):
+                    english[i] = en
+                    flags[i] = check_translation(chunk[i][1], en)
+
+            for (fid, src), en, fl in zip(chunk, english, flags):
+                if fl:
+                    n_flagged += 1
+                n_written += 1
+                rec = {
+                    "file_id": fid,
+                    "arabic": src,
+                    "english": en,
+                    "flags": fl,
+                    "len_ratio": round(len(en) / max(len(src), 1), 3),
+                    "arabic_ratio": round(arabic_ratio(en), 3),
+                    "pers_src": src.count("<PERS>"),
+                    "pers_out": en.count("<PERS>"),
+                    "model": args.model,
+                }
+                handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                status = "OK" if not fl else f"FLAGGED {fl}"
+                print(f"[{n_written}/{len(todo)}] {fid}  "
+                      f"{len(src)}->{len(en)} chars  {status}")
+            handle.flush()  # resumable even if the job is killed between chunks
 
     print(f"\n=== Done. {len(todo) - n_flagged}/{len(todo)} clean, {n_flagged} flagged.")
     print(f"Translations: {args.out}")

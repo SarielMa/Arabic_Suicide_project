@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=arabic_translate
 #SBATCH --mail-type=ALL
-#SBATCH --time=12:00:00
+#SBATCH --time=05:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=b200:2
 #SBATCH --mem=256G
@@ -13,8 +13,10 @@
 #
 #     sbatch apply_translate.sh
 #
-# Qwen2.5-72B is ~145GB and is not in the HF cache yet; the node has internet, so
-# the first run downloads it (add ~30-60 min to the first job, cached after that).
+# Served with vLLM in bf16 across both B200s (Qwen2.5-72B is ~145GB, the pair holds
+# 360GB). Continuous batching puts the whole corpus through in well under an hour;
+# the earlier transformers + 4-bit path decoded one transcript at a time and needed
+# ~14h for the same work. The weights are already in the HF cache.
 #
 # Outputs -- the Arabic originals and all model results are left untouched:
 #   translations/<model>.jsonl        Arabic + English side by side, plus QC flags

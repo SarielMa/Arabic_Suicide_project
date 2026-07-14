@@ -119,12 +119,17 @@ class SFTDataset(Dataset):
         # Mask everything that belongs to the prompt.
         for i in range(min(len(prompt_ids), len(labels))):
             labels[i] = IGNORE_INDEX
-        return {
+        item = {
             "input_ids": full_ids,
             "attention_mask": [1] * len(full_ids),
             "labels": labels,
-            "weight": self.pos_weight if int(rec["label"]) == 1 else 1.0,
         }
+        # Only the weighted arm carries a weight. The unweighted arm must not, or
+        # the plain Trainer would forward it into model(**inputs), which takes no
+        # such argument.
+        if self.pos_weight is not None:
+            item["weight"] = self.pos_weight if int(rec["label"]) == 1 else 1.0
+        return item
 
 
 @dataclass
@@ -144,12 +149,16 @@ class PadCollator:
             input_ids.append(x["input_ids"] + [pad_id] * n)
             attn.append(x["attention_mask"] + [0] * n)
             labels.append(x["labels"] + [IGNORE_INDEX] * n)
-        return {
+        out = {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(attn, dtype=torch.long),
             "labels": torch.tensor(labels, dtype=torch.long),
-            "weight": torch.tensor([x["weight"] for x in batch], dtype=torch.float),
         }
+        if "weight" in batch[0]:
+            out["weight"] = torch.tensor(
+                [x["weight"] for x in batch], dtype=torch.float
+            )
+        return out
 
 
 class WeightedTrainer(Trainer):
@@ -281,7 +290,7 @@ def main() -> int:
         tokenizer,
         max_len=args.max_len,
         max_input_tokens=args.max_len - 128,
-        pos_weight=pos_weight,
+        pos_weight=pos_weight if args.class_weight != "none" else None,
     )
     print(f"Training examples: {len(train_ds)}")
 
@@ -301,6 +310,11 @@ def main() -> int:
         optim="paged_adamw_8bit" if use_4bit else "adamw_torch",
         report_to="none",
         seed=args.seed,
+        # The Trainer otherwise wraps the collator in a RemoveColumnsCollator that
+        # drops every key absent from model.forward() -- including 'weight', which
+        # is ours and never reaches the model. Without this the weighted arm dies
+        # with KeyError: 'weight' on the first batch.
+        remove_unused_columns=False,
     )
 
     # Plain Trainer when unweighted, so the baseline arm stays bit-for-bit what it
