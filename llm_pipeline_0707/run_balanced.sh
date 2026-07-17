@@ -18,9 +18,17 @@
 #   bash run_balanced.sh              # Arm A + B: retrain all models, prob decoding
 #   bash run_balanced.sh rescore      # Arm B only: re-evaluate the EXISTING runs/
 #                                     # adapters with scoring; no training at all
+#   bash run_balanced.sh balance_only # Arm A only: re-evaluate the EXISTING
+#                                     # runs_balanced/ (class-weighted) adapters
+#                                     # with plain greedy decoding; no training
 #
-# Outputs land in runs_balanced/ (Arm A) and runs_scored/ (Arm B on baselines), so
-# the published runs/ tree is never touched.
+# The three arms factor cleanly:
+#   runs_scored/        = Arm B only   (baseline adapters + prob/prior threshold)
+#   runs_balanced_only/ = Arm A only   (class-weighted adapters + greedy 0.5)
+#   runs_balanced/      = Arm A + B    (class-weighted adapters + prob/prior)
+#
+# Outputs land in runs_balanced/, runs_scored/, and runs_balanced_only/, so the
+# published runs/ tree is never touched.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -37,6 +45,7 @@ THRESHOLD="${THRESHOLD:-prior}"                # 'prior' or a float in (0,1)
 DATA_DIR="${DATA_DIR:-processed_datasets}"
 BALANCED_RUNS_DIR="${BALANCED_RUNS_DIR:-runs_balanced}"
 SCORED_RUNS_DIR="${SCORED_RUNS_DIR:-runs_scored}"
+BALANCED_ONLY_RUNS_DIR="${BALANCED_ONLY_RUNS_DIR:-runs_balanced_only}"
 
 echo "--- imbalance experiment config ---"
 echo "  class weight : ${CLASS_WEIGHT} (alpha=${CLASS_WEIGHT_ALPHA}, cap=${CLASS_WEIGHT_CAP})"
@@ -96,8 +105,32 @@ case "$MODE" in
     echo "  python rescore.py --pred '${SCORED_RUNS_DIR}/*/*/eval' --sweep"
     ;;
 
+  balance_only)
+    # Arm A alone: the class-weighted adapters are already trained in
+    # runs_balanced/, so this is pure inference -- exactly greedy decoding at the
+    # implicit 0.5 threshold. It isolates the training-side fix from Arm B, so the
+    # ablation table can attribute each gain to class weighting vs. thresholding
+    # -- without spending a single training step.
+    echo "Arm A only: re-evaluating EXISTING ${BALANCED_RUNS_DIR}/ adapters with greedy decoding"
+    for MODEL in "${MODELS[@]}"; do
+      MODEL="$(echo "$MODEL" | xargs)"
+      RUN_NAME="$(basename "$MODEL" | tr '[:upper:]' '[:lower:]')"
+      for TASK in "${TASKS[@]}"; do
+        ADAPTER="${BALANCED_RUNS_DIR}/${RUN_NAME}/${TASK}"
+        [[ -d "$ADAPTER" ]] || { echo "[skip] no adapter: $ADAPTER (run EXPERIMENT=balanced first)"; continue; }
+        OUT="${BALANCED_ONLY_RUNS_DIR}/${RUN_NAME}/${TASK}"
+        echo "======== BALANCE-ONLY: ${TASK} (${MODEL}) ========"
+        python evaluate.py --task "$TASK" --model "$MODEL" \
+            --adapter "$ADAPTER" --out "${OUT}/eval" --data-dir "${DATA_DIR}" \
+            --decision greedy \
+            --summary-csv "${BALANCED_ONLY_RUNS_DIR}/${RUN_NAME}/summary.csv"
+      done
+    done
+    echo "Done. Summaries: ${BALANCED_ONLY_RUNS_DIR}/<model>/summary.csv"
+    ;;
+
   *)
-    echo "Unknown mode '$MODE' (use: train | rescore)" >&2
+    echo "Unknown mode '$MODE' (use: train | rescore | balance_only)" >&2
     exit 1
     ;;
 esac

@@ -20,12 +20,17 @@ set -euo pipefail
 
 # ============================== CONFIG ======================================
 # What to run:
-#   rescore   Arm B only. Re-evaluates the EXISTING runs/ adapters with P(Yes)
-#             scoring + a corrected threshold. NO training: finishes in minutes,
-#             costs nothing, and tells you whether the collapses in the paper are
-#             dead models or just a mis-set decision threshold. -> runs_scored/
-#   balanced  Arm A+B. Retrains every model with the class-weighted loss and
-#             evaluates with the corrected threshold. Full sweep. -> runs_balanced/
+#   rescore       Arm B only. Re-evaluates the EXISTING runs/ adapters with P(Yes)
+#                 scoring + a corrected threshold. NO training: finishes in minutes,
+#                 costs nothing, and tells you whether the collapses in the paper are
+#                 dead models or just a mis-set decision threshold. -> runs_scored/
+#   balanced      Arm A+B. Retrains every model with the class-weighted loss and
+#                 evaluates with the corrected threshold. Full sweep. -> runs_balanced/
+#   balance_only  Arm A only. Re-evaluates the EXISTING runs_balanced/ (class-
+#                 weighted) adapters with plain greedy decoding at 0.5. NO training:
+#                 isolates the class-weighting fix from the threshold fix, so the
+#                 ablation can separate the two. Requires 'balanced' to have run
+#                 first. -> runs_balanced_only/
 EXPERIMENT="balanced"
 
 # --- Arm A: training-side fix (used only when EXPERIMENT=balanced) ---
@@ -55,8 +60,8 @@ MODELS_FILE="models.txt"
 REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/llm_pipeline_0707"
 
 case "${EXPERIMENT}" in
-  rescore|balanced) ;;
-  *) echo "EXPERIMENT must be 'rescore' or 'balanced', got '${EXPERIMENT}'" >&2; exit 1 ;;
+  rescore|balanced|balance_only) ;;
+  *) echo "EXPERIMENT must be 'rescore', 'balanced', or 'balance_only', got '${EXPERIMENT}'" >&2; exit 1 ;;
 esac
 
 # ---------------------------------------------------------------- environment
@@ -124,8 +129,9 @@ echo "=========================================================="
 export CLASS_WEIGHT CLASS_WEIGHT_ALPHA CLASS_WEIGHT_CAP DECISION THRESHOLD MODELS_FILE
 
 case "${EXPERIMENT}" in
-  rescore)  bash run_balanced.sh rescore ;;
-  balanced) bash run_balanced.sh train ;;
+  rescore)      bash run_balanced.sh rescore ;;
+  balanced)     bash run_balanced.sh train ;;
+  balance_only) bash run_balanced.sh balance_only ;;
 esac
 
 echo "Done (EXPERIMENT=${EXPERIMENT})."
