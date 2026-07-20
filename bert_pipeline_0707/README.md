@@ -66,11 +66,37 @@ sbatch apply_english.sh
 `google-bert/bert-large-uncased` and `google-bert/bert-base-uncased`, and writes
 outputs under `runs_en/<model>/`.
 
+## Merged Two-Level Run (med_risk / high_risk)
+A coarser target that pools the 5 constructs into two bands, each the OR of its
+constituents:
+- `med_risk`  = wish_to_be_dead OR non_specific_active_suicidal_thoughts
+- `high_risk` = any_methods OR some_intent_to_act OR specific_plan_and_intent
+
+The datasets are built by the LLM pipeline and read from here directly:
+```bash
+cd ../llm_pipeline_0707 && python build_merged_data.py   # writes both languages
+cd ../bert_pipeline_0707 && sbatch apply_merged.sh       # Arabic + English
+```
+`apply_merged.sh` sweeps both languages with their own model lists (`models.txt`
+for Arabic, `models_english.txt` for English) and writes `runs_merged_ep3/` and
+`runs_en_merged_ep3/`. It trains for **3 epochs** to match the merged LLM-pipeline
+runs; note this differs from `train.py`'s default of 4, which the 5-task baseline
+in `runs/` used, so merged-vs-5-task BERT comparisons do not hold epochs constant.
+
+Any dataset laid out as `<DATA_DIR>/<task>/{train,test}.{json,jsonl}` can be swept
+by setting `TASK_LIST`; task names must be listed in `tasks.ALL_TASK_KEYS`, which
+`--task` validates against.
+
 ## Metrics
 Same as the LLM pipeline: per-class precision/recall/F1, macro & weighted,
-accuracy, confusion matrix. Positive class = label 1 (TRUE). Each run writes
-`metrics.json`, `metrics.csv`, `predictions.jsonl`; `run_all.sh` collects a
-`runs/<model>/summary.csv`.
+accuracy, ROC-AUC, PR-AUC, confusion matrix. Positive class = label 1 (TRUE).
+Each run writes `metrics.json`, `metrics.csv`, `predictions.jsonl`; `run_all.sh`
+collects a `runs/<model>/summary.csv`.
+
+ROC-AUC and PR-AUC are threshold-free and computed from `P(positive)`, which is
+also stored per example as `p_pos` in `predictions.jsonl` so AUC can be recomputed
+or a threshold swept without re-running inference. Both are `null` (an empty CSV
+cell) when the split contains a single class, where they are undefined.
 
 ## Important notes
 - **512-token limit vs. long calls.** Transcripts are much longer than 512

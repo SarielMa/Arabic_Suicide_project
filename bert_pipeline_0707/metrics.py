@@ -44,9 +44,16 @@ def compute_metrics(y_true, y_pred, y_score=None) -> dict:
         y_true, y_pred, labels=labels, average="weighted", zero_division=0
     )
     cm = confusion_matrix(y_true, y_pred, labels=labels).tolist()
+    both_classes = len(set(y_true)) > 1
+    roc_auc = pr_auc = None
+    if y_score is not None and both_classes:
+        roc_auc = roc_auc_score(y_true, y_score)
+        pr_auc = average_precision_score(y_true, y_score)
     return {
         "n": len(y_true),
         "accuracy": accuracy_score(y_true, y_pred),
+        "roc_auc": roc_auc,
+        "pr_auc": pr_auc,
         "positive_class": 1,
         "per_class": {
             "negative(0)": {"precision": p[0], "recall": r[0], "f1": f1[0], "support": int(support[0])},
@@ -73,6 +80,10 @@ def metrics_to_row(metrics: dict, model: str, task: str, split: str) -> dict:
         "accuracy": round(metrics["accuracy"], 4),
         "macro_f1": round(metrics["macro"]["f1"], 4),
         "weighted_f1": round(metrics["weighted"]["f1"], 4),
+        # Empty cell rather than a sentinel when scores were unavailable, so the
+        # column reads as missing instead of as a real (and misleading) value.
+        "roc_auc": round(metrics["roc_auc"], 4) if metrics.get("roc_auc") is not None else "",
+        "pr_auc": round(metrics["pr_auc"], 4) if metrics.get("pr_auc") is not None else "",
         "precision_pos": round(metrics["precision_pos"], 4),
         "recall_pos": round(metrics["recall_pos"], 4),
         "f1_pos": round(metrics["f1_pos"], 4),

@@ -6,7 +6,13 @@
 #
 # Arg 1: HF model id (default CAMeL-Lab/bert-base-arabic-camelbert-da)
 # Arg 2: short run name for the output path (default derived from model)
-# Env:   DATA_DIR, RUNS_DIR, TRUNCATION, CHUNKING
+# Env:   DATA_DIR, RUNS_DIR, TRUNCATION, CHUNKING, TASK_LIST, TRAIN_ARGS
+#
+# Merged two-level arm (med_risk / high_risk; data built by the LLM pipeline's
+# build_merged_data.py):
+#   DATA_DIR=../llm_pipeline_0707/processed_datasets_merged RUNS_DIR=runs_merged_ep3 \
+#     TASK_LIST="med_risk high_risk" TRAIN_ARGS="--epochs 3" \
+#     bash run_all.sh CAMeL-Lab/bert-base-arabic-camelbert-da camelbert-da
 set -euo pipefail
 
 MODEL="${1:-CAMeL-Lab/bert-base-arabic-camelbert-da}"
@@ -17,14 +23,16 @@ TRUNCATION="${TRUNCATION:-head}"
 # CHUNKING=1 reads the FULL transcript (512-token windows + [CLS] mean-pool).
 CHUNKING="${CHUNKING:-0}"
 CHUNK_FLAG=""; [[ "$CHUNKING" == "1" ]] && CHUNK_FLAG="--chunking"
+TRAIN_ARGS="${TRAIN_ARGS:-}"
 
-TASKS=(
-  wish_to_be_dead
-  non_specific_active_suicidal_thoughts
-  active_suicidal_ideation_with_any_methods
-  active_suicidal_with_some_intent_to_act
-  active_suicidal_ideation_with_specific_plan_and_intent
-)
+# Any dataset laid out as <DATA_DIR>/<task>/{train,test}.{json,jsonl} can be swept
+# by overriding TASK_LIST; the task name is just a directory. Names must appear in
+# tasks.ALL_TASK_KEYS, which train.py/evaluate.py validate --task against.
+read -r -a TASKS <<< "${TASK_LIST:-wish_to_be_dead \
+non_specific_active_suicidal_thoughts \
+active_suicidal_ideation_with_any_methods \
+active_suicidal_with_some_intent_to_act \
+active_suicidal_ideation_with_specific_plan_and_intent}"
 
 for TASK in "${TASKS[@]}"; do
   OUT="${RUNS_DIR}/${RUN_NAME}/${TASK}"
@@ -36,7 +44,7 @@ for TASK in "${TASKS[@]}"; do
   echo "================ TRAIN: ${TASK} (${MODEL}) ================"
   python train.py --task "$TASK" --model "$MODEL" \
       --data-dir "$DATA_DIR" --truncation "$TRUNCATION" \
-      $CHUNK_FLAG --output-dir "$OUT"
+      $CHUNK_FLAG --output-dir "$OUT" ${TRAIN_ARGS}
 
   echo "================ EVAL:  ${TASK} (${MODEL}) ================"
   # Chunking is auto-detected from the model's run_config.json.

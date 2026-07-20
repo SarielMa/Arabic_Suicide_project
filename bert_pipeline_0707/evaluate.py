@@ -24,7 +24,7 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from tasks import TASK_KEYS
+from tasks import ALL_TASK_KEYS
 from data_utils import load_split, maybe_arabert_preprocessor, preprocess_texts
 from chunk_model import (
     ChunkCollator,
@@ -41,8 +41,13 @@ from metrics import (
 
 @torch.no_grad()
 def predict(model, tokenizer, texts, max_length, batch_size):
+    """Return (hard predictions, P(positive)).
+
+    The probabilities feed the threshold-free ROC-AUC / PR-AUC; the argmax is
+    unchanged, so the reported accuracy/F1 are exactly what they were before.
+    """
     device = next(model.parameters()).device
-    preds = []
+    preds, scores = [], []
     for start in range(0, len(texts), batch_size):
         batch = texts[start : start + batch_size]
         enc = tokenizer(
@@ -51,15 +56,17 @@ def predict(model, tokenizer, texts, max_length, batch_size):
         ).to(device)
         logits = model(**enc).logits
         preds.extend(logits.argmax(dim=-1).cpu().tolist())
+        scores.extend(torch.softmax(logits.float(), dim=-1)[:, 1].cpu().tolist())
         print(f"  predicted {min(start + batch_size, len(texts))}/{len(texts)}")
-    return preds
+    return preds, scores
 
 
 @torch.no_grad()
 def predict_chunked(model, tokenizer, texts, max_length, max_chunks, truncation, batch_size):
+    """Chunked counterpart of predict(); same (predictions, P(positive)) contract."""
     device = next(model.parameters()).device
     collator = ChunkCollator(tokenizer)
-    preds = []
+    preds, scores = [], []
     for start in range(0, len(texts), batch_size):
         batch_texts = texts[start : start + batch_size]
         batch = [
@@ -71,13 +78,14 @@ def predict_chunked(model, tokenizer, texts, max_length, max_chunks, truncation,
         enc = {k: v.to(device) for k, v in enc.items() if k != "labels"}
         logits = model(**enc).logits
         preds.extend(logits.argmax(dim=-1).cpu().tolist())
+        scores.extend(torch.softmax(logits.float(), dim=-1)[:, 1].cpu().tolist())
         print(f"  predicted {min(start + batch_size, len(texts))}/{len(texts)}")
-    return preds
+    return preds, scores
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--task", required=True, choices=TASK_KEYS)
+    p.add_argument("--task", required=True, choices=ALL_TASK_KEYS)
     p.add_argument("--model", required=True, help="Path to the fine-tuned model dir.")
     p.add_argument("--data-dir", type=Path, default=Path("../training_datasets_0707"))
     p.add_argument("--split", default="test")
@@ -130,22 +138,25 @@ def main() -> int:
     print(f"Evaluating {len(texts)} examples with {args.model}")
 
     if chunking:
-        preds = predict_chunked(
+        preds, scores = predict_chunked(
             model, tokenizer, texts, args.max_length, max_chunks,
             truncation, args.batch_size,
         )
     else:
-        preds = predict(model, tokenizer, texts, args.max_length, args.batch_size)
+        preds, scores = predict(model, tokenizer, texts, args.max_length, args.batch_size)
 
-    metrics = compute_metrics(labels, preds)
+    metrics = compute_metrics(labels, preds, scores)
     metrics["task"] = args.task
     metrics["model"] = base_name
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    # p_pos is kept per example so AUC can be recomputed, or a threshold swept,
+    # without re-running inference.
     with (args.out / "predictions.jsonl").open("w", encoding="utf-8") as handle:
-        for fid, t, pr in zip(file_ids, labels, preds):
-            handle.write(json.dumps({"file_id": fid, "true": t, "pred": pr}) + "\n")
+        for fid, t, pr, sc in zip(file_ids, labels, preds, scores):
+            handle.write(json.dumps(
+                {"file_id": fid, "true": t, "pred": pr, "p_pos": sc}) + "\n")
 
     row = metrics_to_row(metrics, base_name, args.task, args.split)
     write_run_csv(args.out / "metrics.csv", row)
@@ -158,6 +169,8 @@ def main() -> int:
     print(f"Positive-class (1): P={metrics['precision_pos']:.4f} "
           f"R={metrics['recall_pos']:.4f} F1={metrics['f1_pos']:.4f}")
     print(f"Macro F1:           {metrics['macro']['f1']:.4f}")
+    if metrics["roc_auc"] is not None:
+        print(f"ROC-AUC / PR-AUC:   {metrics['roc_auc']:.4f} / {metrics['pr_auc']:.4f}")
     print(f"Confusion [tn,fp / fn,tp]: {metrics['confusion_matrix']['matrix']}")
     print(f"Saved to: {args.out}")
     return 0

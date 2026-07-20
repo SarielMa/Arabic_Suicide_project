@@ -39,7 +39,7 @@ from transformers import (
     set_seed,
 )
 
-from tasks import TASK_KEYS
+from tasks import ALL_TASK_KEYS
 from data_utils import load_split, maybe_arabert_preprocessor, preprocess_texts
 from metrics import compute_metrics
 from chunk_model import (
@@ -98,7 +98,7 @@ def hf_compute_metrics(eval_pred):
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--task", required=True, choices=TASK_KEYS)
+    p.add_argument("--task", required=True, choices=ALL_TASK_KEYS)
     p.add_argument("--model", default="CAMeL-Lab/bert-base-arabic-camelbert-da")
     p.add_argument("--data-dir", type=Path, default=Path("../training_datasets_0707"))
     p.add_argument("--output-dir", type=Path, required=True)
