@@ -16,7 +16,8 @@ from sklearn.metrics import (
 # Column order for the flat CSV summary row.
 CSV_FIELDS = [
     "model", "task", "split", "n",
-    "accuracy", "macro_f1", "weighted_f1",
+    "accuracy",
+    "macro_precision", "macro_recall", "macro_f1", "weighted_f1",
     "roc_auc", "pr_auc",
     "precision_pos", "recall_pos", "f1_pos",
     "precision_neg", "recall_neg", "f1_neg",
@@ -78,6 +79,8 @@ def metrics_to_row(metrics: dict, model: str, task: str, split: str) -> dict:
         "split": split,
         "n": metrics["n"],
         "accuracy": round(metrics["accuracy"], 4),
+        "macro_precision": round(metrics["macro"]["precision"], 4),
+        "macro_recall": round(metrics["macro"]["recall"], 4),
         "macro_f1": round(metrics["macro"]["f1"], 4),
         "weighted_f1": round(metrics["weighted"]["f1"], 4),
         # Empty cell rather than a sentinel when scores were unavailable, so the

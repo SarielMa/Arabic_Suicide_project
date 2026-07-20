@@ -87,6 +87,30 @@ def arabic_ratio(text: str) -> float:
     return arabic / len(letters)
 
 
+def looping_ratio(text: str, window: int = 40, uniq_floor: float = 0.30) -> float:
+    """Fraction of overlapping word windows that are mostly one repeated token.
+
+    Detects decoder degeneration: the model latches onto a token and emits it
+    until it hits max_new_tokens ("hello hello hello ...", "now, now, now ...").
+    The real translation stops wherever the loop began, so the tail of the call
+    -- where a helpline caller is most likely to escalate -- is simply gone.
+
+    Length alone cannot catch this. Of the 29 degenerate outputs in the 72B run,
+    only 15 exceeded the too_long ratio; the rest looped *within* a normal overall
+    length, one at a ratio of 1.05. Hence a shape check rather than a size check.
+    """
+    words = re.findall(r"\S+", text.lower())
+    if len(words) < window:
+        return 0.0
+    starts = list(range(0, len(words) - window, window // 2))
+    if not starts:
+        return 0.0
+    looped = sum(
+        1 for i in starts if len(set(words[i : i + window])) / window < uniq_floor
+    )
+    return looped / len(starts)
+
+
 def check_translation(src: str, out: str) -> list[str]:
     """Return a list of quality flags; empty means the translation looks sound."""
     flags = []
@@ -111,17 +135,31 @@ def check_translation(src: str, out: str) -> list[str]:
     ar = arabic_ratio(out)
     if ar > 0.10:
         flags.append(f"arabic_residue({ar:.2f})")
+    # Decoder degeneration. The source is ASR of a real call and genuinely repeats
+    # ("الو الو الو" opens most of them), so a bare repetition count would fire on
+    # faithful translations. We flag only when the OUTPUT loops far more than the
+    # INPUT does -- that difference is the model's invention, not the caller's speech.
+    out_loop, src_loop = looping_ratio(out), looping_ratio(src)
+    if out_loop > 0.15 and out_loop > src_loop + 0.15:
+        flags.append(f"degenerate({out_loop:.2f}>{src_loop:.2f})")
     if src.count("<PERS>") != out.count("<PERS>"):
         flags.append(f"pers({src.count('<PERS>')}->{out.count('<PERS>')})")
     return flags
 
 
 # A hard flag means the translation lost content the label depends on: the model
-# refused, summarized, truncated, or left the text in Arabic. Those are worth a
-# retry and must not enter the training data. The rest are cosmetic -- a dropped
-# <PERS> placeholder or a verbose-but-complete rendering changes no risk evidence,
-# and at 72B it is not worth re-decoding a transcript over.
-HARD_FLAGS = ("empty", "refusal", "too_short", "arabic_residue")
+# refused, summarized, truncated, degenerated, or left the text in Arabic. Those
+# are worth a retry and must not enter the training data. The rest are cosmetic --
+# a dropped <PERS> placeholder or a verbose-but-complete rendering changes no risk
+# evidence, and at 72B it is not worth re-decoding a transcript over.
+#
+# `degenerate` was NOT originally hard, and `too_long` still is not. That gap let
+# 29 looped translations (6.6%) into the English data: the loop starts early --
+# median 10% of the way in -- so ~90% of those documents is filler and the rest of
+# the call was never translated. That is a content-destroying failure, exactly like
+# too_short, so it belongs here. `too_long` stays soft: genuine verbosity loses
+# nothing, and every looped output is now caught by shape instead.
+HARD_FLAGS = ("empty", "refusal", "too_short", "arabic_residue", "degenerate")
 
 
 def hard_flags(flags: list[str]) -> list[str]:
@@ -167,19 +205,28 @@ def build_prompt(tokenizer, transcript: str) -> str:
 
 
 def translate_batch(llm, prompts: list[str], max_new_tokens: int,
-                    temperature: float, seed: int) -> list[str]:
+                    temperature: float, seed: int,
+                    repetition_penalty: float = 1.0) -> list[str]:
     """Translate a list of prompts in one vLLM call, preserving input order.
 
     Attempt 0 is greedy (temperature=0), which reproduces the deterministic
     behaviour of the old transformers path. Retries resample with a little
     temperature -- re-running a greedy decode would only redraw the identical
     bad text.
+
+    ``repetition_penalty`` > 1 is what actually breaks a decoder loop. Temperature
+    alone is not enough: once the model is inside "hello hello hello" the repeated
+    token dominates the distribution, so sampling re-draws it anyway. Penalising
+    already-emitted tokens is what lets the decode escape. Kept mild (~1.1) and
+    used only on retries, because the source is disfluent ASR whose real
+    repetitions we are instructed to preserve.
     """
     params = SamplingParams(
         temperature=temperature,
         top_p=0.9 if temperature > 0 else 1.0,
         max_tokens=max_new_tokens,
         seed=seed if temperature > 0 else None,
+        repetition_penalty=repetition_penalty,
     )
     outputs = llm.generate(prompts, params)
     # vLLM returns results in the order of the prompts it was given.
@@ -198,6 +245,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--retries", type=int, default=2,
                    help="Re-attempts for a transcript whose translation fails the checks.")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--repetition-penalty", type=float, default=1.1,
+                   help="Applied on retries only; >1 is what breaks a decoder loop.")
+    p.add_argument("--redo", action="store_true",
+                   help="Re-translate transcripts already in --out whose stored "
+                        "translation fails the CURRENT hard checks, rewriting the "
+                        "file in place (a .bak is kept). Use after tightening the "
+                        "checks; without it, existing entries are never revisited.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="With --redo: report what would be re-translated, load no model.")
     # --- vLLM engine ---
     p.add_argument("--tensor-parallel-size", type=int, default=0,
                    help="0 = use every visible GPU.")
@@ -218,10 +274,35 @@ def main() -> int:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     done = read_done(args.out)
+
+    # --redo re-checks what is already on disk against the CURRENT rules and queues
+    # the failures. Ordinary runs only ever translate file_ids absent from the file,
+    # so a check tightened after the fact would otherwise never be applied.
+    redo_ids: list[str] = []
+    if args.redo:
+        for fid, rec in done.items():
+            if fid not in transcripts:
+                continue
+            if hard_flags(check_translation(transcripts[fid], rec.get("english", ""))):
+                redo_ids.append(fid)
+        redo_ids.sort()
+        print(f"--redo: {len(redo_ids)}/{len(done)} stored translations fail the current checks")
+        for fid in redo_ids:
+            fl = check_translation(transcripts[fid], done[fid].get("english", ""))
+            print(f"   {fid}  {hard_flags(fl)}")
+        if args.dry_run:
+            print("\n--dry-run: nothing re-translated, no model loaded.")
+            return 0
+        if not redo_ids:
+            print("Nothing to redo.")
+            return 0
+
     todo = [(fid, txt) for fid, txt in transcripts.items() if fid not in done]
     if args.limit:
         todo = todo[: args.limit]
-    print(f"Already translated: {len(done)}   To do now: {len(todo)}")
+    todo = [(fid, transcripts[fid]) for fid in redo_ids] + todo
+    print(f"Already translated: {len(done)}   To do now: {len(todo)}"
+          f"{f' ({len(redo_ids)} redo + {len(todo) - len(redo_ids)} new)' if redo_ids else ''}")
     if not todo:
         print("Nothing to do.")
         return 0
@@ -240,6 +321,9 @@ def main() -> int:
         seed=args.seed,
     )
 
+    redo_set = set(redo_ids)
+    updated: dict[str, dict] = {}  # redone records, merged back into the file at the end
+
     n_flagged = 0
     n_written = 0
     with args.out.open("a", encoding="utf-8") as handle:
@@ -247,10 +331,21 @@ def main() -> int:
             chunk = todo[start : start + args.chunk_size]
             prompts = [build_prompt(tokenizer, src) for _, src in chunk]
 
-            # Attempt 0: one greedy pass over the whole chunk.
-            english = translate_batch(
-                llm, prompts, args.max_new_tokens, temperature=0.0, seed=args.seed
-            )
+            # Attempt 0: one greedy pass over the whole chunk. On --redo the stored
+            # text came from exactly this decode, so repeating it would reproduce the
+            # same loop; go straight to the sampled+penalised path instead.
+            if args.redo and all(fid in redo_set for fid, _ in chunk):
+                # Offset well clear of the retry seeds (seed+1, seed+2, ...) below,
+                # so a retry never redraws the sample this pass already produced.
+                english = translate_batch(
+                    llm, prompts, args.max_new_tokens,
+                    temperature=0.3, seed=args.seed + 1000,
+                    repetition_penalty=args.repetition_penalty,
+                )
+            else:
+                english = translate_batch(
+                    llm, prompts, args.max_new_tokens, temperature=0.0, seed=args.seed
+                )
             flags = [check_translation(src, en) for (_, src), en in zip(chunk, english)]
 
             # Retries: re-decode only the transcripts whose translation lost content,
@@ -264,6 +359,7 @@ def main() -> int:
                 retry_out = translate_batch(
                     llm, [prompts[i] for i in bad], args.max_new_tokens,
                     temperature=0.3, seed=args.seed + attempt,
+                    repetition_penalty=args.repetition_penalty,
                 )
                 for i, en in zip(bad, retry_out):
                     english[i] = en
@@ -284,16 +380,51 @@ def main() -> int:
                     "pers_out": en.count("<PERS>"),
                     "model": args.model,
                 }
-                handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                if fid in redo_set:
+                    # Held back and merged in below: appending would leave two records
+                    # for one file_id, and consumers that keep the first would silently
+                    # go on using the broken text.
+                    updated[fid] = rec
+                else:
+                    handle.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 status = "OK" if not fl else f"FLAGGED {fl}"
                 print(f"[{n_written}/{len(todo)}] {fid}  "
                       f"{len(src)}->{len(en)} chars  {status}")
             handle.flush()  # resumable even if the job is killed between chunks
 
+    # Merge redone records back in place, preserving the original line order so the
+    # file stays a stable artifact. The previous version is kept as .bak.
+    if updated:
+        backup = args.out.with_suffix(args.out.suffix + ".bak")
+        args.out.replace(backup)
+        seen: set[str] = set()
+        n_replaced = 0
+        with backup.open(encoding="utf-8") as src_h, \
+             args.out.open("w", encoding="utf-8") as dst_h:
+            for line in src_h:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                fid = rec["file_id"]
+                if fid in seen:
+                    continue  # collapse any pre-existing duplicates
+                seen.add(fid)
+                if fid in updated:
+                    rec = updated.pop(fid)
+                    n_replaced += 1
+                dst_h.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            for fid, rec in updated.items():  # redone but not previously on file
+                dst_h.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        print(f"\nReplaced {n_replaced} record(s) in place; previous file kept at {backup}")
+
     print(f"\n=== Done. {len(todo) - n_flagged}/{len(todo)} clean, {n_flagged} flagged.")
     print(f"Translations: {args.out}")
     print("Inspect flagged ones before building the English datasets:")
     print(f"  python inspect_translations.py --pred {args.out}")
+    if redo_set:
+        print("\nThen rebuild the downstream datasets:")
+        print(f"  python build_english_data.py --pred {args.out}")
+        print("  python build_merged_data.py")
     return 0
 
 

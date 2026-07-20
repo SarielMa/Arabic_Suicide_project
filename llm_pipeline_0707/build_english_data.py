@@ -23,7 +23,7 @@ import argparse
 import json
 from pathlib import Path
 
-from translate import hard_flags
+from translate import check_translation, hard_flags
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -43,12 +43,25 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     translations = {r["file_id"]: r for r in read_jsonl(args.pred)}
-    # Only hard flags (refusal / summarization / truncation / untranslated Arabic)
-    # block the build: those delete the evidence the label rests on. A soft flag --
-    # a dropped <PERS> placeholder, a verbose rendering -- leaves the risk content
-    # intact and is not a reason to withhold the transcript from training.
-    damaged = {fid for fid, r in translations.items() if hard_flags(r["flags"])}
-    soft = {fid for fid, r in translations.items() if r["flags"] and fid not in damaged}
+    # Flags are RE-DERIVED here rather than read from the record. The stored list was
+    # written by whatever version of check_translation ran at translation time, so a
+    # check added later would never be applied to an existing file -- which is exactly
+    # how 29 looped translations reached the English data: they were written before
+    # `degenerate` existed, and their stored flags say only 'pers'/'too_long'.
+    # Re-checking costs nothing and makes the build fail closed instead of trusting a
+    # stale annotation. Falls back to the stored flags if the source text is absent.
+    def current_flags(rec: dict) -> list[str]:
+        if "arabic" in rec and "english" in rec:
+            return check_translation(rec["arabic"], rec["english"])
+        return rec.get("flags", [])
+
+    flags_now = {fid: current_flags(r) for fid, r in translations.items()}
+    # Only hard flags (refusal / summarization / truncation / degeneration /
+    # untranslated Arabic) block the build: those delete the evidence the label rests
+    # on. A soft flag -- a dropped <PERS> placeholder, a verbose rendering -- leaves
+    # the risk content intact and is not a reason to withhold the transcript.
+    damaged = {fid for fid, f in flags_now.items() if hard_flags(f)}
+    soft = {fid for fid, f in flags_now.items() if f and fid not in damaged}
     print(f"Translations: {len(translations)}  "
           f"(content-damaged: {len(damaged)}, cosmetic flags: {len(soft)})")
 
@@ -67,11 +80,19 @@ def main() -> int:
             f"{sorted(missing)[:5]}). Finish translate.py before building."
         )
     if damaged and not args.allow_flagged:
+        by_kind: dict[str, int] = {}
+        for fid in damaged:
+            for f in hard_flags(flags_now[fid]):
+                by_kind[f.split("(")[0]] = by_kind.get(f.split("(")[0], 0) + 1
         raise SystemExit(
-            f"{len(damaged)} translations lost content (refusal / summarized / "
-            f"truncated / still Arabic). Inspect them first:\n"
+            f"{len(damaged)} translations lost content "
+            f"({', '.join(f'{k}={v}' for k, v in sorted(by_kind.items()))}).\n"
+            f"Inspect them:\n"
             f"  python inspect_translations.py --pred {args.pred} --only-flagged --show 5\n"
-            f"Then re-translate them, or pass --allow-flagged to include them anyway."
+            f"Re-translate them in place:\n"
+            f"  python translate.py --out {args.pred} --redo\n"
+            f"Or pass --allow-flagged to include them anyway (not recommended: a "
+            f"degenerate translation is filler, not content)."
         )
 
     print(f"\n{'task':<52} {'split':<6} {'n':>5} {'pos':>5}")

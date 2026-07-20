@@ -16,16 +16,17 @@ RUNS_DIR="${RUNS_DIR:-runs}"
 DATA_DIR="${DATA_DIR:-processed_datasets}"
 EVAL_ARGS="${EVAL_ARGS:-}"
 
-TASKS=(
-  wish_to_be_dead
-  non_specific_active_suicidal_thoughts
-  active_suicidal_ideation_with_any_methods
-  active_suicidal_with_some_intent_to_act
-  active_suicidal_ideation_with_specific_plan_and_intent
-)
+# As in run_all.sh: --task is a plain directory under DATA_DIR, so any dataset laid
+# out as <DATA_DIR>/<task>/{train,test}.jsonl can be swept by overriding TASK_LIST.
+read -r -a TASKS <<< "${TASK_LIST:-wish_to_be_dead \
+non_specific_active_suicidal_thoughts \
+active_suicidal_ideation_with_any_methods \
+active_suicidal_with_some_intent_to_act \
+active_suicidal_ideation_with_specific_plan_and_intent}"
 
-# Ensure instruction-formatted data exists (idempotent).
-python prepare_data.py
+# Ensure instruction-formatted data exists (idempotent). Override for datasets built
+# by a different script; set to "true" to skip (e.g. the merged data is pre-built).
+${PREPARE_CMD:-python prepare_data.py}
 
 for TASK in "${TASKS[@]}"; do
   OUT="${RUNS_DIR}/zeroshot/${RUN_NAME}/${TASK}"

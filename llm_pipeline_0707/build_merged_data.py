@@ -134,7 +134,27 @@ def main() -> int:
     )
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--exclude", type=Path, default=None,
+        help="File of file_ids to drop, one per line ('#' comments allowed). "
+             "Applied to BOTH languages before the split is drawn, so Arabic and "
+             "English stay a like-for-like comparison.",
+    )
     args = parser.parse_args()
+
+    # Excluded calls are removed from both languages, not just the one with the
+    # defect. Dropping them from English alone would leave the two corpora covering
+    # different populations, and an Arabic-vs-English difference would no longer be
+    # attributable to language. The cost is real -- a sound Arabic transcript is
+    # discarded because its translation failed -- and it is paid deliberately to keep
+    # the comparison controlled.
+    excluded: set[str] = set()
+    if args.exclude:
+        for line in args.exclude.read_text(encoding="utf-8").splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line:
+                excluded.add(line)
+        print(f"Exclusion list: {len(excluded)} file_ids from {args.exclude}")
 
     ar_labels, ar_text = load_task_labels(args.src_dir)
     langs = [("ar", args.out_dir, ar_text)]
@@ -155,7 +175,14 @@ def main() -> int:
         components = meta["components"]
         labelled: dict[str, int] = {}
         n_dropped = 0
+        n_excluded = 0
         for fid, per_task in ar_labels.items():
+            if fid in excluded:
+                # Dropped before labelling, so the call cannot influence the split
+                # or the class balance in either language.
+                if any(t in per_task for t in components):
+                    n_excluded += 1
+                continue
             label = merge_label(per_task, components)
             if label is None:
                 # Either no component annotated this call at all, or the OR is
@@ -173,7 +200,8 @@ def main() -> int:
         instruction = build_instruction(meta["question"])
 
         print(f"{merged_key}  (OR of {len(components)} tasks)")
-        print(f"  kept {len(labelled)} calls, dropped {n_dropped} undetermined")
+        print(f"  kept {len(labelled)} calls, dropped {n_dropped} undetermined"
+              + (f", {n_excluded} excluded" if n_excluded else ""))
         for lang, out_dir, transcripts in langs:
             for split in SPLITS:
                 out_path = out_dir / merged_key / f"{split}.jsonl"
@@ -190,6 +218,9 @@ def main() -> int:
             "components": components,
             "n_kept": len(labelled),
             "n_dropped_undetermined": n_dropped,
+            "n_excluded": n_excluded,
+            "excluded_file_ids": sorted(f for f in excluded if f in ar_labels),
+            "exclusion_list": str(args.exclude) if args.exclude else None,
             "test_size": args.test_size,
             "seed": args.seed,
             "splits": by_split,

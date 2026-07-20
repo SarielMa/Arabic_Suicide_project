@@ -98,7 +98,8 @@ def compute_metrics(y_true: list[int], y_pred: list[int]) -> dict:
 CSV_FIELDS = [
     "base_model", "adapter", "task", "split", "n",
     "decision", "threshold", "class_weight", "pos_weight",
-    "accuracy", "macro_f1", "weighted_f1",
+    "accuracy",
+    "macro_precision", "macro_recall", "macro_f1", "weighted_f1",
     "roc_auc", "pr_auc",
     "precision_pos", "recall_pos", "f1_pos",
     "precision_neg", "recall_neg", "f1_neg",
@@ -125,6 +126,8 @@ def metrics_to_row(metrics: dict, split: str) -> dict:
         "roc_auc": round(metrics["roc_auc"], 4) if metrics["roc_auc"] is not None else "",
         "pr_auc": round(metrics["pr_auc"], 4) if metrics["pr_auc"] is not None else "",
         "accuracy": round(metrics["accuracy"], 4),
+        "macro_precision": round(metrics["macro"]["precision"], 4),
+        "macro_recall": round(metrics["macro"]["recall"], 4),
         "macro_f1": round(metrics["macro"]["f1"], 4),
         "weighted_f1": round(metrics["weighted"]["f1"], 4),
         "precision_pos": round(metrics["precision_pos"], 4),

@@ -20,8 +20,8 @@
 # published baseline, so the only thing that differs from the 5-task baseline is the
 # label granularity.
 #
-# Reads:  processed_datasets_merged/     (Arabic;  built by build_merged_data.py)
-#         processed_datasets_merged_en/  (English; built by the same script)
+# Reads:  processed_datasets_merged/     (Arabic)   PRE-BUILT -- see below
+#         processed_datasets_merged_en/  (English)  PRE-BUILT -- see below
 # Writes: runs_merged_ep3/<model>/<task>/     Arabic  SFT, 3 epochs, greedy decoding
 #         runs_en_merged_ep3/<model>/<task>/  English SFT, 3 epochs, greedy decoding
 #
@@ -34,8 +34,8 @@
 #
 # Resume: run_all.sh skips any task whose adapter + eval already exist, so if this
 # job hits the wall clock just resubmit it -- finished tasks are not retrained. The
-# dataset build below is seeded, so a resubmission reproduces the identical split
-# rather than reshuffling under the already-trained adapters.
+# merged datasets are NOT rebuilt by this job, so a resubmission reads the identical
+# split rather than reshuffling under the already-trained adapters.
 set -euo pipefail
 
 # ============================== CONFIG ======================================
@@ -118,11 +118,13 @@ nvidia-smi
 
 cd "${REPO_ROOT}"
 
-# Build BOTH merged datasets once, up front. build_merged_data.py emits Arabic and
-# English together from the 5-task sources, so it is run here rather than per-sweep;
-# run_all.sh is told to skip its own prepare step below.
-echo "########## BUILD: merged datasets ##########"
-python build_merged_data.py
+# NOTE: this job deliberately does NOT build the merged datasets. They are a shared,
+# pre-built artifact -- run `python build_merged_data.py` once, by hand, before
+# submitting. Rebuilding here would rewrite the very files every concurrent job is
+# reading (torn reads), and would make each arm re-derive its own split instead of
+# reading one fixed one: if the 5-task sources ever changed between two submissions,
+# the arms would silently train and test on different data with nothing to flag it.
+# The guard below refuses to start if the artifact is missing.
 
 # Build the (data dir, runs dir) pairs to sweep, in order.
 DATA_DIRS=()
@@ -139,7 +141,11 @@ for i in "${!DATA_DIRS[@]}"; do
   for TASK in ${TASK_LIST}; do
     for SPLIT in train test; do
       F="${DATA_DIRS[$i]}/${TASK}/${SPLIT}.jsonl"
-      [[ -f "${F}" ]] || { echo "Missing ${F} after build_merged_data.py." >&2; exit 1; }
+      [[ -f "${F}" ]] || {
+        echo "Missing ${F}." >&2
+        echo "Build the merged datasets first: python build_merged_data.py" >&2
+        exit 1
+      }
     done
   done
 done
@@ -155,10 +161,11 @@ echo "=========================================================="
 mapfile -t MODELS < <(grep -vE '^[[:space:]]*(#|$)' "${MODELS_FILE}")
 [[ ${#MODELS[@]} -gt 0 ]] || { echo "No models in ${MODELS_FILE}" >&2; exit 1; }
 
-# Plain SFT at EPOCHS epochs. EVAL_ARGS is left empty on purpose so evaluate.py
-# defaults to --decision greedy: the baseline condition, only on merged labels.
-# PREPARE_CMD=true skips run_all.sh's prepare_data.py step, which would rebuild the
-# 5-task processed_datasets/ tree that is not used here.
+# Both conditions use the ORIGINAL decision rule: EVAL_ARGS is left empty, so
+# evaluate.py defaults to --decision greedy -- neither the class-weighted arm (A)
+# nor the prior-thresholded arm (B). PREPARE_CMD=true skips run_all.sh's / run_
+# zeroshot.sh's prepare_data.py step, which would rebuild the 5-task
+# processed_datasets/ tree that is not used here.
 for i in "${!DATA_DIRS[@]}"; do
   DATA_DIR="${DATA_DIRS[$i]}"
   RUNS_DIR="${RUNS_DIRS[$i]}"
@@ -166,6 +173,14 @@ for i in "${!DATA_DIRS[@]}"; do
   for MODEL in "${MODELS[@]}"; do
     MODEL="$(echo "${MODEL}" | xargs)"
     RUN_NAME="$(basename "${MODEL}" | tr '[:upper:]' '[:lower:]')"
+
+    # Zero-shot (base model, no adapter) into ${RUNS_DIR}/zeroshot/. Independent of
+    # EPOCHS, so each epoch-arm computes its own copy and stays self-contained.
+    RUNS_DIR="${RUNS_DIR}" DATA_DIR="${DATA_DIR}" \
+    TASK_LIST="${TASK_LIST}" PREPARE_CMD="true" \
+      bash run_zeroshot.sh "${MODEL}" "${RUN_NAME}"
+
+    # Supervised fine-tuning + greedy eval.
     RUNS_DIR="${RUNS_DIR}" DATA_DIR="${DATA_DIR}" \
     TASK_LIST="${TASK_LIST}" PREPARE_CMD="true" \
     TRAIN_ARGS="--epochs ${EPOCHS}" \
@@ -173,6 +188,8 @@ for i in "${!DATA_DIRS[@]}"; do
   done
 done
 
-echo "Done (merged two-level SFT, ${EPOCHS} epochs, SWEEP_LANG=${SWEEP_LANG})."
-echo "Arabic SFT summaries:  runs_merged_ep3/<model>/summary.csv"
-echo "English SFT summaries: runs_en_merged_ep3/<model>/summary.csv"
+echo "Done (merged two-level: zero-shot + ${EPOCHS}-epoch SFT, SWEEP_LANG=${SWEEP_LANG})."
+echo "Arabic  zero-shot: runs_merged_ep3/zeroshot/<model>/summary.csv"
+echo "Arabic  SFT:       runs_merged_ep3/<model>/summary.csv"
+echo "English zero-shot: runs_en_merged_ep3/zeroshot/<model>/summary.csv"
+echo "English SFT:       runs_en_merged_ep3/<model>/summary.csv"

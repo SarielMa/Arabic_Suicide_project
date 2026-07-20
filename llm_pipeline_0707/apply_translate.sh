@@ -107,11 +107,22 @@ echo "=========================================================="
 
 python prepare_data.py
 
+# REDO=1 re-translates transcripts already on file whose stored translation fails
+# the CURRENT checks, rewriting them in place (a .bak is kept). Use it after a check
+# is tightened: an ordinary run only translates file_ids absent from the file, so a
+# rule added later would never be applied to what is already there. This is how the
+# 29 degenerate (looped) translations get repaired.
+#
+#     sbatch --export=ALL,REDO=1 apply_translate.sh
+REDO_FLAG=""
+[[ "${REDO:-0}" == "1" ]] && REDO_FLAG="--redo"
+
 python translate.py \
     --model "${TRANSLATOR}" \
     --out "${OUT_JSONL}" \
     --limit "${PILOT_N}" \
-    --retries "${RETRIES}"
+    --retries "${RETRIES}" \
+    ${REDO_FLAG}
 
 # QC report: flag rate overall, and -- the number that matters -- whether the
 # failures cluster on positive-label calls.
