@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=merged_bert
+#SBATCH --job-name=merged_bert10
 #SBATCH --mail-type=ALL
-#SBATCH --time=4:00:00
+#SBATCH --time=10:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=b200:1
 #SBATCH --mem=256G
 #SBATCH --partition=gpu_b200
-#SBATCH --output=%j_merged_bert_b200.txt
+#SBATCH --output=%j_merged_bert_ep10_b200.txt
 #SBATCH --mail-user=linhai.ma@yale.edu
 
 set -euo pipefail
@@ -14,30 +14,31 @@ set -euo pipefail
 # Two-level risk experiment for the BERT pipeline: fine-tune + evaluate the merged
 # med_risk / high_risk tasks on BOTH Arabic and English. Submit with no arguments:
 #
-#     sbatch apply_merged.sh
+#     sbatch apply_merged_10ep.sh
 #
 # Reads:  ../llm_pipeline_0707/processed_datasets_merged/     (Arabic)
 #         ../llm_pipeline_0707/processed_datasets_merged_en/  (English)
 #         Both are built by the LLM pipeline's build_merged_data.py -- run it there
 #         first if those directories are missing.
-# Writes: runs_merged_ep3/<model>/<task>/     Arabic
-#         runs_en_merged_ep3/<model>/<task>/  English
+# Writes: runs_merged_ep10/<model>/<task>/     Arabic
+#         runs_en_merged_ep10/<model>/<task>/  English
 #
 # where <task> is med_risk or high_risk. Nothing under runs/ or runs_en/ is touched.
 #
 # Each language uses its own model list, mirroring apply_server.sh / apply_english.sh:
 # Arabic encoders for the Arabic transcripts, English encoders for the translations.
 #
-# Epochs are set to 3 to match the merged LLM-pipeline runs. NOTE this differs from
-# train.py's default of 4, which the existing 5-task BERT baseline in runs/ used --
-# so merged-vs-5-task BERT comparisons do not hold epoch count constant.
+# Epochs are set to 10, matching the merged LLM-pipeline 10-epoch arm. This differs
+# from train.py's default of 4, which the 5-task BERT baseline in runs/ used, and from
+# the 3-epoch arm in runs_merged_ep3/ -- which must NOT share this output tree, or
+# run_all.sh resume would let the two jobs skip each other and mix epoch counts.
 #
 # Resume: run_all.sh skips any task whose model + eval already exist, so a job that
 # hits the wall clock can simply be resubmitted.
 
 # ============================== CONFIG ======================================
-# SFT epochs (matches the merged LLM runs; train.py's own default is 4).
-EPOCHS="3"
+# SFT epochs (matches the merged LLM 10-epoch arm; train.py's own default is 4).
+EPOCHS="10"
 
 # The two merged tasks, swept in place of the 5 C-SSRS tasks.
 export TASK_LIST="med_risk high_risk"
@@ -132,10 +133,10 @@ export NUM_GPUS
 # language keeps its own model list, as in apply_server.sh / apply_english.sh.
 SWEEPS=()
 if [[ "${SWEEP_LANG}" == "arabic" || "${SWEEP_LANG}" == "both" ]]; then
-  SWEEPS+=("${MERGED_ROOT}/processed_datasets_merged|runs_merged_ep3|models.txt")
+  SWEEPS+=("${MERGED_ROOT}/processed_datasets_merged|runs_merged_ep10|models.txt")
 fi
 if [[ "${SWEEP_LANG}" == "english" || "${SWEEP_LANG}" == "both" ]]; then
-  SWEEPS+=("${MERGED_ROOT}/processed_datasets_merged_en|runs_en_merged_ep3|models_english.txt")
+  SWEEPS+=("${MERGED_ROOT}/processed_datasets_merged_en|runs_en_merged_ep10|models_english.txt")
 fi
 
 # Fail fast before burning GPU time: every task split must exist up front.
@@ -170,5 +171,5 @@ for SWEEP in "${SWEEPS[@]}"; do
 done
 
 echo "Done (merged two-level BERT, ${EPOCHS} epochs, SWEEP_LANG=${SWEEP_LANG})."
-echo "Arabic summaries:  runs_merged_ep3/<model>/summary.csv"
-echo "English summaries: runs_en_merged_ep3/<model>/summary.csv"
+echo "Arabic summaries:  runs_merged_ep10/<model>/summary.csv"
+echo "English summaries: runs_en_merged_ep10/<model>/summary.csv"

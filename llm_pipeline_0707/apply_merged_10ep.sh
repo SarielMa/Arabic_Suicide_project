@@ -6,27 +6,30 @@
 #SBATCH --gpus=b200:2
 #SBATCH --mem=256G
 #SBATCH --partition=gpu_b200
-#SBATCH --output=%j_merged_ep3_b200.txt
+#SBATCH --output=%j_merged_ep10_b200.txt
 #SBATCH --mail-user=linhai.ma@yale.edu
 #
-# Two-level risk experiment: plain SFT for 3 epochs on the merged med_risk /
+# Two-level risk experiment: plain SFT for 10 epochs on the merged med_risk /
 # high_risk datasets, on BOTH Arabic and English, for every model in models.txt.
 # Submit with no arguments:
 #
-#     sbatch apply_merged.sh
+#     sbatch apply_merged_10ep.sh
 #
 # This is the *plain* pipeline -- standard cross-entropy, greedy decoding. No class
-# weighting (Arm A), no thresholded scoring (Arm B). Epoch count is 3, matching the
-# published baseline, so the only thing that differs from the 5-task baseline is the
-# label granularity.
+# weighting (Arm A), no thresholded scoring (Arm B). Epoch count is 10, so against the
+# 3-epoch merged arm in runs_merged_ep3/ the only thing that differs is training
+# length -- the merged-label analogue of the runs_ep10/ experiment.
 #
 # Reads:  processed_datasets_merged/     (Arabic;  built by build_merged_data.py)
 #         processed_datasets_merged_en/  (English; built by the same script)
-# Writes: runs_merged_ep3/<model>/<task>/     Arabic  SFT, 3 epochs, greedy decoding
-#         runs_en_merged_ep3/<model>/<task>/  English SFT, 3 epochs, greedy decoding
+# Writes: runs_merged_ep10/<model>/<task>/     Arabic  SFT, 10 epochs, greedy decoding
+#         runs_en_merged_ep10/<model>/<task>/  English SFT, 10 epochs, greedy decoding
 #
 # where <task> is med_risk or high_risk. Nothing under runs/, runs_en/, runs_scored/,
-# runs_balanced/, runs_balanced_only/, runs_ep10/ or runs_en_ep10/ is touched.
+# runs_balanced/, runs_balanced_only/, runs_ep10/, runs_en_ep10/, runs_merged_ep3/ or
+# runs_en_merged_ep3/ is touched -- in particular this arm must NOT share an output
+# tree with apply_merged.sh (3 epochs), or run_all.sh's resume check would let the
+# two jobs skip each other's tasks and silently mix epoch counts in one directory.
 #
 # There is no zero-shot column for these tasks yet: the merged questions differ from
 # the 5 C-SSRS questions, so runs/zeroshot/ does NOT transfer. Run run_zeroshot.sh
@@ -39,14 +42,17 @@
 set -euo pipefail
 
 # ============================== CONFIG ======================================
-# Number of SFT epochs (3 = train.py's default, i.e. the baseline setting).
+# Number of SFT epochs. train.py defaults to 3; this arm deliberately trains longer.
 EPOCHS="10"
 
 # Which language(s) to sweep:
-#   arabic   processed_datasets_merged/     -> runs_merged_ep3/
-#   english  processed_datasets_merged_en/  -> runs_en_merged_ep3/
+#   arabic   processed_datasets_merged/     -> runs_merged_ep10/
+#   english  processed_datasets_merged_en/  -> runs_en_merged_ep10/
 #   both     Arabic first, then English
-LANG="both"
+# NOTE: deliberately NOT named LANG -- that is the POSIX locale variable, which
+# SLURM propagates into the job. Assigning it here would clobber the locale for
+# every child process, and a "${LANG:-both}" default would inherit C.UTF-8 instead.
+SWEEP_LANG="both"
 
 # The two merged tasks, swept in place of the 5 C-SSRS tasks.
 TASK_LIST="med_risk high_risk"
@@ -57,9 +63,9 @@ MODELS_FILE="models.txt"
 
 REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/llm_pipeline_0707"
 
-case "${LANG}" in
+case "${SWEEP_LANG}" in
   arabic|english|both) ;;
-  *) echo "LANG must be arabic|english|both, got '${LANG}'" >&2; exit 1 ;;
+  *) echo "SWEEP_LANG must be arabic|english|both, got '${SWEEP_LANG}'" >&2; exit 1 ;;
 esac
 
 # ---------------------------------------------------------------- environment
@@ -124,11 +130,11 @@ python build_merged_data.py
 # Build the (data dir, runs dir) pairs to sweep, in order.
 DATA_DIRS=()
 RUNS_DIRS=()
-if [[ "${LANG}" == "arabic" || "${LANG}" == "both" ]]; then
-  DATA_DIRS+=("processed_datasets_merged");    RUNS_DIRS+=("runs_merged_ep3")
+if [[ "${SWEEP_LANG}" == "arabic" || "${SWEEP_LANG}" == "both" ]]; then
+  DATA_DIRS+=("processed_datasets_merged");    RUNS_DIRS+=("runs_merged_ep10")
 fi
-if [[ "${LANG}" == "english" || "${LANG}" == "both" ]]; then
-  DATA_DIRS+=("processed_datasets_merged_en"); RUNS_DIRS+=("runs_en_merged_ep3")
+if [[ "${SWEEP_LANG}" == "english" || "${SWEEP_LANG}" == "both" ]]; then
+  DATA_DIRS+=("processed_datasets_merged_en"); RUNS_DIRS+=("runs_en_merged_ep10")
 fi
 
 # Fail fast if a requested language is missing a task split.
@@ -145,7 +151,7 @@ echo "=========================================================="
 echo " EXPERIMENT  = merged two-level SFT (no class weight, greedy decoding)"
 echo " TASKS       = ${TASK_LIST}"
 echo " EPOCHS      = ${EPOCHS}"
-echo " LANG        = ${LANG}"
+echo " SWEEP_LANG  = ${SWEEP_LANG}"
 echo " MODELS_FILE = ${MODELS_FILE}"
 echo "=========================================================="
 
@@ -170,6 +176,6 @@ for i in "${!DATA_DIRS[@]}"; do
   done
 done
 
-echo "Done (merged two-level SFT, ${EPOCHS} epochs, LANG=${LANG})."
-echo "Arabic SFT summaries:  runs_merged_ep3/<model>/summary.csv"
-echo "English SFT summaries: runs_en_merged_ep3/<model>/summary.csv"
+echo "Done (merged two-level SFT, ${EPOCHS} epochs, SWEEP_LANG=${SWEEP_LANG})."
+echo "Arabic SFT summaries:  runs_merged_ep10/<model>/summary.csv"
+echo "English SFT summaries: runs_en_merged_ep10/<model>/summary.csv"

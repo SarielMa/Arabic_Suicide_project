@@ -46,7 +46,10 @@ EPOCHS="3"
 #   arabic   processed_datasets_merged/     -> runs_merged_ep3/
 #   english  processed_datasets_merged_en/  -> runs_en_merged_ep3/
 #   both     Arabic first, then English
-LANG="both"
+# NOTE: deliberately NOT named LANG -- that is the POSIX locale variable, which
+# SLURM propagates into the job. Assigning it here would clobber the locale for
+# every child process, and a "${LANG:-both}" default would inherit C.UTF-8 instead.
+SWEEP_LANG="both"
 
 # The two merged tasks, swept in place of the 5 C-SSRS tasks.
 TASK_LIST="med_risk high_risk"
@@ -57,9 +60,9 @@ MODELS_FILE="models.txt"
 
 REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/llm_pipeline_0707"
 
-case "${LANG}" in
+case "${SWEEP_LANG}" in
   arabic|english|both) ;;
-  *) echo "LANG must be arabic|english|both, got '${LANG}'" >&2; exit 1 ;;
+  *) echo "SWEEP_LANG must be arabic|english|both, got '${SWEEP_LANG}'" >&2; exit 1 ;;
 esac
 
 # ---------------------------------------------------------------- environment
@@ -124,10 +127,10 @@ python build_merged_data.py
 # Build the (data dir, runs dir) pairs to sweep, in order.
 DATA_DIRS=()
 RUNS_DIRS=()
-if [[ "${LANG}" == "arabic" || "${LANG}" == "both" ]]; then
+if [[ "${SWEEP_LANG}" == "arabic" || "${SWEEP_LANG}" == "both" ]]; then
   DATA_DIRS+=("processed_datasets_merged");    RUNS_DIRS+=("runs_merged_ep3")
 fi
-if [[ "${LANG}" == "english" || "${LANG}" == "both" ]]; then
+if [[ "${SWEEP_LANG}" == "english" || "${SWEEP_LANG}" == "both" ]]; then
   DATA_DIRS+=("processed_datasets_merged_en"); RUNS_DIRS+=("runs_en_merged_ep3")
 fi
 
@@ -145,7 +148,7 @@ echo "=========================================================="
 echo " EXPERIMENT  = merged two-level SFT (no class weight, greedy decoding)"
 echo " TASKS       = ${TASK_LIST}"
 echo " EPOCHS      = ${EPOCHS}"
-echo " LANG        = ${LANG}"
+echo " SWEEP_LANG  = ${SWEEP_LANG}"
 echo " MODELS_FILE = ${MODELS_FILE}"
 echo "=========================================================="
 
@@ -170,6 +173,6 @@ for i in "${!DATA_DIRS[@]}"; do
   done
 done
 
-echo "Done (merged two-level SFT, ${EPOCHS} epochs, LANG=${LANG})."
+echo "Done (merged two-level SFT, ${EPOCHS} epochs, SWEEP_LANG=${SWEEP_LANG})."
 echo "Arabic SFT summaries:  runs_merged_ep3/<model>/summary.csv"
 echo "English SFT summaries: runs_en_merged_ep3/<model>/summary.csv"
