@@ -13,11 +13,18 @@
 #   RUNS_DIR    output tree                        (default: runs)
 #   TRAIN_ARGS  extra flags for train.py           (e.g. --class-weight balanced)
 #   EVAL_ARGS   extra flags for evaluate.py        (e.g. --decision prob)
+#   TASK_LIST   space-separated task dirs to sweep (default: the 5 C-SSRS tasks)
+#   PREPARE_CMD data-build command run first       (default: python prepare_data.py)
 #
 # Balanced arm (writes to runs_balanced/, leaving runs/ untouched):
 #   RUNS_DIR=runs_balanced TRAIN_ARGS="--class-weight balanced" \
 #     EVAL_ARGS="--decision prob --threshold prior" \
 #     bash run_all.sh meta-llama/Llama-3.3-70B-Instruct llama-3.3-70b-instruct
+#
+# Merged two-level arm (med_risk / high_risk; see build_merged_data.py):
+#   RUNS_DIR=runs_merged DATA_DIR=processed_datasets_merged \
+#     TASK_LIST="med_risk high_risk" PREPARE_CMD="python build_merged_data.py" \
+#     bash run_all.sh Qwen/Qwen2.5-1.5B-Instruct qwen2.5-1.5b
 set -euo pipefail
 
 MODEL="${1:-Qwen/Qwen2.5-1.5B-Instruct}"
@@ -27,16 +34,18 @@ DATA_DIR="${DATA_DIR:-processed_datasets}"
 TRAIN_ARGS="${TRAIN_ARGS:-}"
 EVAL_ARGS="${EVAL_ARGS:-}"
 
-TASKS=(
-  wish_to_be_dead
-  non_specific_active_suicidal_thoughts
-  active_suicidal_ideation_with_any_methods
-  active_suicidal_with_some_intent_to_act
-  active_suicidal_ideation_with_specific_plan_and_intent
-)
+# train.py / evaluate.py treat --task as a plain directory name under DATA_DIR and
+# read the prompt from each record's `instruction` field, so any dataset laid out
+# as <DATA_DIR>/<task>/{train,test}.jsonl can be swept by overriding TASK_LIST.
+read -r -a TASKS <<< "${TASK_LIST:-wish_to_be_dead \
+non_specific_active_suicidal_thoughts \
+active_suicidal_ideation_with_any_methods \
+active_suicidal_with_some_intent_to_act \
+active_suicidal_ideation_with_specific_plan_and_intent}"
 
-# Step 1: build instruction-formatted data (idempotent; safe to re-run).
-python prepare_data.py
+# Step 1: build instruction-formatted data (idempotent; safe to re-run). Override
+# for datasets built by a different script; set to "true" to skip entirely.
+${PREPARE_CMD:-python prepare_data.py}
 
 for TASK in "${TASKS[@]}"; do
   OUT="${RUNS_DIR}/${RUN_NAME}/${TASK}"

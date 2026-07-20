@@ -1,23 +1,24 @@
 #!/bin/bash
-#SBATCH --job-name=arabic_suicide_bert
+#SBATCH --job-name=english_suicide_bert
 #SBATCH --mail-type=ALL
-#SBATCH --time=5:00:00
+#SBATCH --time=2:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=b200:1
 #SBATCH --mem=256G
 #SBATCH --partition=gpu_b200
-#SBATCH --output=%j_arabic_suicide_bert_b200.txt
+#SBATCH --output=%j_english_suicide_bert_b200.txt
 #SBATCH --mail-user=linhai.ma@yale.edu
 
 set -euo pipefail
 
-# ==== Long-transcript handling (transcripts far exceed BERT's 512-token cap) ====
-# Edit these two values directly, then just `sbatch apply_server.sh`.
-#   CHUNKING   = 1 -> read the FULL transcript (512-token windows + pooling)
-#                0 -> truncate to 512 tokens
-#   TRUNCATION = head | tail  (which end to keep; also picks the kept windows
-#                when a transcript needs more than max_chunks windows)
-# (Both still accept a submit-time override, e.g. --export=ALL,CHUNKING=0.)
+# English translated-transcript BERT experiment.
+# Reads:  ../llm_pipeline_0707/processed_datasets_en/
+# Writes: runs_en/<model>/<task>/
+export MODELS_FILE="${MODELS_FILE:-models_english.txt}"
+export DATA_DIR="${DATA_DIR:-../llm_pipeline_0707/processed_datasets_en}"
+export RUNS_DIR="${RUNS_DIR:-runs_en}"
+
+# Match the Arabic long-transcript setup unless overridden at submit time.
 export CHUNKING="${CHUNKING:-1}"
 export TRUNCATION="${TRUNCATION:-head}"
 
@@ -78,6 +79,8 @@ nvidia-smi
 
 cd "${REPO_ROOT}"
 [[ -f "${PIPELINE_SH}" ]] || { echo "Missing pipeline script: ${PIPELINE_SH}" >&2; exit 1; }
+[[ -f "${MODELS_FILE}" ]] || { echo "Missing model list: ${MODELS_FILE}" >&2; exit 1; }
+[[ -d "${DATA_DIR}" ]] || { echo "Missing English data directory: ${DATA_DIR}" >&2; exit 1; }
 
 if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
   NUM_GPUS=$(awk -F',' '{print NF}' <<< "${CUDA_VISIBLE_DEVICES}")
@@ -94,9 +97,11 @@ export NUM_GPUS
 
 echo "REPO_ROOT=${REPO_ROOT}"
 echo "PIPELINE_SH=${PIPELINE_SH}"
+echo "MODELS_FILE=${MODELS_FILE}"
+echo "DATA_DIR=${DATA_DIR}"
+echo "RUNS_DIR=${RUNS_DIR}"
 echo "TRUNCATION=${TRUNCATION}  CHUNKING=${CHUNKING}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "NUM_GPUS=${NUM_GPUS}"
 
-# run_pipeline.sh reads models.txt and fine-tunes + evaluates each model.
 bash "${PIPELINE_SH}"

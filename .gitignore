@@ -89,3 +89,6 @@ PVminerLLM_qwen2.5_1.5b_instruct/
 meta_data.xlsx
 runs_balanced/
 translations/
+runs_en/
+runs_ep10/
+runs_*/

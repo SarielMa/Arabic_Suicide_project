@@ -9,13 +9,22 @@ from pathlib import Path
 def load_split(data_dir: Path, task: str, split: str) -> tuple[list[str], list[int], list[str]]:
     """Load a task split. Returns (texts, labels, file_ids).
 
-    Reads the raw datasets produced by build_training_datasets.py, which already
-    contain the transcript text and the binary label for each task.
+    Supports the raw JSON datasets produced by build_training_datasets.py and
+    the instruction JSONL datasets produced by the LLM pipeline.
     """
-    path = data_dir / task / f"{split}.json"
-    with path.open(encoding="utf-8") as handle:
-        records = json.load(handle)
-    texts = [r["text"] for r in records]
+    json_path = data_dir / task / f"{split}.json"
+    jsonl_path = data_dir / task / f"{split}.jsonl"
+
+    if json_path.exists():
+        with json_path.open(encoding="utf-8") as handle:
+            records = json.load(handle)
+    elif jsonl_path.exists():
+        with jsonl_path.open(encoding="utf-8") as handle:
+            records = [json.loads(line) for line in handle if line.strip()]
+    else:
+        raise FileNotFoundError(f"Missing split file: {json_path} or {jsonl_path}")
+
+    texts = [r.get("text", r.get("input", "")) for r in records]
     labels = [int(r["label"]) for r in records]
     file_ids = [r["file_id"] for r in records]
     return texts, labels, file_ids

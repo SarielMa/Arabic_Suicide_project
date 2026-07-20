@@ -181,6 +181,7 @@ def main() -> int:
         bf16=use_cuda,
         report_to="none",
         seed=args.seed,
+        remove_unused_columns=not args.chunking,
     )
 
     if args.chunking:

@@ -27,7 +27,12 @@ def build_chunks(text, tokenizer, max_length, max_chunks, truncation):
     """
     reserve = tokenizer.num_special_tokens_to_add(pair=False)  # e.g. [CLS]+[SEP]
     window = max_length - reserve
-    body = tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
+    body = tokenizer(
+        text,
+        add_special_tokens=False,
+        truncation=False,
+        verbose=False,
+    )["input_ids"]
 
     windows = [body[i : i + window] for i in range(0, max(len(body), 1), window)]
     if len(windows) > max_chunks:

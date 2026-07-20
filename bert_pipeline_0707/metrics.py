@@ -7,14 +7,17 @@ from pathlib import Path
 
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     confusion_matrix,
     precision_recall_fscore_support,
+    roc_auc_score,
 )
 
 # Column order for the flat CSV summary row.
 CSV_FIELDS = [
     "model", "task", "split", "n",
     "accuracy", "macro_f1", "weighted_f1",
+    "roc_auc", "pr_auc",
     "precision_pos", "recall_pos", "f1_pos",
     "precision_neg", "recall_neg", "f1_neg",
     "support_pos", "support_neg",
@@ -22,8 +25,14 @@ CSV_FIELDS = [
 ]
 
 
-def compute_metrics(y_true, y_pred) -> dict:
-    """Metrics for imbalanced binary classification (positive class = 1)."""
+def compute_metrics(y_true, y_pred, y_score=None) -> dict:
+    """Metrics for imbalanced binary classification (positive class = 1).
+
+    ``y_score`` is the predicted probability of the positive class. When given,
+    the threshold-free ranking metrics ROC-AUC and PR-AUC are added; both are
+    ``None`` if it is omitted, or if ``y_true`` contains a single class (they
+    are undefined there, and sklearn raises rather than returning NaN).
+    """
     labels = [0, 1]
     p, r, f1, support = precision_recall_fscore_support(
         y_true, y_pred, labels=labels, zero_division=0

@@ -48,6 +48,38 @@ TASKS: dict[str, dict[str, str]] = {
 }
 
 
+# Coarser two-level grouping over the 5 C-SSRS tasks, produced by
+# build_merged_data.py. A merged label is the OR of its constituents.
+#
+# The constituent tasks do not all annotate the same calls, so a call whose
+# available constituent labels are all 0 but which is missing at least one
+# annotation has an *undetermined* merged label (0 or 1 depending on the value
+# that was never recorded). build_merged_data.py drops those rather than
+# assuming a negative; see its docstring.
+MERGED_TASKS: dict[str, dict] = {
+    "med_risk": {
+        "components": [
+            "wish_to_be_dead",
+            "non_specific_active_suicidal_thoughts",
+        ],
+        "question": "Based on the call, does the caller express suicidal ideation at "
+        "a moderate level, that is, either a wish to be dead (a passive desire to "
+        "die) or non-specific active suicidal thoughts (thoughts of killing oneself "
+        "without a method)?",
+    },
+    "high_risk": {
+        "components": [
+            "active_suicidal_ideation_with_any_methods",
+            "active_suicidal_with_some_intent_to_act",
+            "active_suicidal_ideation_with_specific_plan_and_intent",
+        ],
+        "question": "Based on the call, does the caller express suicidal ideation at "
+        "a high level, that is, active suicidal ideation with any method, with some "
+        "intent to act, or with a specific plan and intent?",
+    },
+}
+
+
 # AceGPT-v2 (Llama-3-based, FreedomIntelligence) ships no chat_template but was
 # trained on a plain "<User>: ... <Assistant>: ..." format with no system role
 # (see its model card). We fold the system prompt into the first user turn and

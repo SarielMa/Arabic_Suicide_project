@@ -1,0 +1,175 @@
+#!/bin/bash
+#SBATCH --job-name=merged10
+#SBATCH --mail-type=ALL
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --gpus=b200:2
+#SBATCH --mem=256G
+#SBATCH --partition=gpu_b200
+#SBATCH --output=%j_merged_ep3_b200.txt
+#SBATCH --mail-user=linhai.ma@yale.edu
+#
+# Two-level risk experiment: plain SFT for 3 epochs on the merged med_risk /
+# high_risk datasets, on BOTH Arabic and English, for every model in models.txt.
+# Submit with no arguments:
+#
+#     sbatch apply_merged.sh
+#
+# This is the *plain* pipeline -- standard cross-entropy, greedy decoding. No class
+# weighting (Arm A), no thresholded scoring (Arm B). Epoch count is 3, matching the
+# published baseline, so the only thing that differs from the 5-task baseline is the
+# label granularity.
+#
+# Reads:  processed_datasets_merged/     (Arabic;  built by build_merged_data.py)
+#         processed_datasets_merged_en/  (English; built by the same script)
+# Writes: runs_merged_ep3/<model>/<task>/     Arabic  SFT, 3 epochs, greedy decoding
+#         runs_en_merged_ep3/<model>/<task>/  English SFT, 3 epochs, greedy decoding
+#
+# where <task> is med_risk or high_risk. Nothing under runs/, runs_en/, runs_scored/,
+# runs_balanced/, runs_balanced_only/, runs_ep10/ or runs_en_ep10/ is touched.
+#
+# There is no zero-shot column for these tasks yet: the merged questions differ from
+# the 5 C-SSRS questions, so runs/zeroshot/ does NOT transfer. Run run_zeroshot.sh
+# against the merged data dirs if a zero-shot comparison is wanted.
+#
+# Resume: run_all.sh skips any task whose adapter + eval already exist, so if this
+# job hits the wall clock just resubmit it -- finished tasks are not retrained. The
+# dataset build below is seeded, so a resubmission reproduces the identical split
+# rather than reshuffling under the already-trained adapters.
+set -euo pipefail
+
+# ============================== CONFIG ======================================
+# Number of SFT epochs (3 = train.py's default, i.e. the baseline setting).
+EPOCHS="10"
+
+# Which language(s) to sweep:
+#   arabic   processed_datasets_merged/     -> runs_merged_ep3/
+#   english  processed_datasets_merged_en/  -> runs_en_merged_ep3/
+#   both     Arabic first, then English
+LANG="both"
+
+# The two merged tasks, swept in place of the 5 C-SSRS tasks.
+TASK_LIST="med_risk high_risk"
+
+# Which models to sweep (one HF repo per line; '#' comments allowed).
+MODELS_FILE="models.txt"
+# ===========================================================================
+
+REPO_ROOT="/nfs/roberts/project/pi_sjf37/lm2445/Arabic_data_match/llm_pipeline_0707"
+
+case "${LANG}" in
+  arabic|english|both) ;;
+  *) echo "LANG must be arabic|english|both, got '${LANG}'" >&2; exit 1 ;;
+esac
+
+# ---------------------------------------------------------------- environment
+for var in CONDA_EXE CONDA_PREFIX CONDA_PREFIX_1 CONDA_PREFIX_2 CONDA_DEFAULT_ENV CONDA_PROMPT_MODIFIER CONDA_SHLVL CONDA_PYTHON_EXE CONDA_PKGS_DIRS CONDA_ENVS_PATH _CE_CONDA _CE_M _CONDA_EXE _CONDA_ROOT; do
+  unset "${var}" || true
+done
+unset -f conda 2>/dev/null || true
+unset -f __conda_activate 2>/dev/null || true
+unset -f __conda_reactivate 2>/dev/null || true
+unset -f __conda_hashr 2>/dev/null || true
+
+if ! command -v conda >/dev/null 2>&1; then
+  conda() { return 0; }
+  export -f conda
+  _FAKE_CONDA_FOR_PURGE=1
+fi
+
+module --force purge || true
+if [[ "${_FAKE_CONDA_FOR_PURGE:-0}" == "1" ]]; then
+  unset -f conda || true
+  unset _FAKE_CONDA_FOR_PURGE
+fi
+
+module load StdEnv || true
+module load CUDA/12.8.0
+
+export CUDA_HOME
+CUDA_HOME="$(dirname "$(dirname "$(which nvcc)")")"
+export PATH="${CUDA_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+
+export TRITON_CACHE_DIR="/tmp/${USER}/triton_cache"
+mkdir -p "$TRITON_CACHE_DIR"
+
+module load miniconda
+
+if [[ -n "${EBROOTMINICONDA:-}" && -f "${EBROOTMINICONDA}/etc/profile.d/conda.sh" ]]; then
+  source "${EBROOTMINICONDA}/etc/profile.d/conda.sh"
+elif command -v conda >/dev/null 2>&1; then
+  CONDA_BIN="$(command -v conda)"
+  CONDA_BASE="$(cd "$(dirname "${CONDA_BIN}")/.." && pwd)"
+  source "${CONDA_BASE}/etc/profile.d/conda.sh"
+else
+  echo "Failed to initialize conda after loading the miniconda module." >&2
+  exit 1
+fi
+
+conda activate finben_b200
+
+which python
+python -c "import torch; print('torch cuda:', torch.version.cuda); print('gpus:', torch.cuda.device_count())"
+nvidia-smi
+
+cd "${REPO_ROOT}"
+
+# Build BOTH merged datasets once, up front. build_merged_data.py emits Arabic and
+# English together from the 5-task sources, so it is run here rather than per-sweep;
+# run_all.sh is told to skip its own prepare step below.
+echo "########## BUILD: merged datasets ##########"
+python build_merged_data.py
+
+# Build the (data dir, runs dir) pairs to sweep, in order.
+DATA_DIRS=()
+RUNS_DIRS=()
+if [[ "${LANG}" == "arabic" || "${LANG}" == "both" ]]; then
+  DATA_DIRS+=("processed_datasets_merged");    RUNS_DIRS+=("runs_merged_ep3")
+fi
+if [[ "${LANG}" == "english" || "${LANG}" == "both" ]]; then
+  DATA_DIRS+=("processed_datasets_merged_en"); RUNS_DIRS+=("runs_en_merged_ep3")
+fi
+
+# Fail fast if a requested language is missing a task split.
+for i in "${!DATA_DIRS[@]}"; do
+  for TASK in ${TASK_LIST}; do
+    for SPLIT in train test; do
+      F="${DATA_DIRS[$i]}/${TASK}/${SPLIT}.jsonl"
+      [[ -f "${F}" ]] || { echo "Missing ${F} after build_merged_data.py." >&2; exit 1; }
+    done
+  done
+done
+
+echo "=========================================================="
+echo " EXPERIMENT  = merged two-level SFT (no class weight, greedy decoding)"
+echo " TASKS       = ${TASK_LIST}"
+echo " EPOCHS      = ${EPOCHS}"
+echo " LANG        = ${LANG}"
+echo " MODELS_FILE = ${MODELS_FILE}"
+echo "=========================================================="
+
+mapfile -t MODELS < <(grep -vE '^[[:space:]]*(#|$)' "${MODELS_FILE}")
+[[ ${#MODELS[@]} -gt 0 ]] || { echo "No models in ${MODELS_FILE}" >&2; exit 1; }
+
+# Plain SFT at EPOCHS epochs. EVAL_ARGS is left empty on purpose so evaluate.py
+# defaults to --decision greedy: the baseline condition, only on merged labels.
+# PREPARE_CMD=true skips run_all.sh's prepare_data.py step, which would rebuild the
+# 5-task processed_datasets/ tree that is not used here.
+for i in "${!DATA_DIRS[@]}"; do
+  DATA_DIR="${DATA_DIRS[$i]}"
+  RUNS_DIR="${RUNS_DIRS[$i]}"
+  echo "########## SWEEP: ${DATA_DIR} -> ${RUNS_DIR} (${EPOCHS} epochs) ##########"
+  for MODEL in "${MODELS[@]}"; do
+    MODEL="$(echo "${MODEL}" | xargs)"
+    RUN_NAME="$(basename "${MODEL}" | tr '[:upper:]' '[:lower:]')"
+    RUNS_DIR="${RUNS_DIR}" DATA_DIR="${DATA_DIR}" \
+    TASK_LIST="${TASK_LIST}" PREPARE_CMD="true" \
+    TRAIN_ARGS="--epochs ${EPOCHS}" \
+      bash run_all.sh "${MODEL}" "${RUN_NAME}"
+  done
+done
+
+echo "Done (merged two-level SFT, ${EPOCHS} epochs, LANG=${LANG})."
+echo "Arabic SFT summaries:  runs_merged_ep3/<model>/summary.csv"
+echo "English SFT summaries: runs_en_merged_ep3/<model>/summary.csv"

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=arabic_suicide_balanced
 #SBATCH --mail-type=ALL
-#SBATCH --time=18:00:00
+#SBATCH --time=3:00:00
 #SBATCH --nodes=1
 #SBATCH --gpus=b200:2
 #SBATCH --mem=256G
@@ -31,7 +31,7 @@ set -euo pipefail
 #                 isolates the class-weighting fix from the threshold fix, so the
 #                 ablation can separate the two. Requires 'balanced' to have run
 #                 first. -> runs_balanced_only/
-EXPERIMENT="balanced"
+EXPERIMENT="balance_only"
 
 # --- Arm A: training-side fix (used only when EXPERIMENT=balanced) ---
 # Positive examples get loss weight w_pos = (N_neg / N_pos)^ALPHA, capped at CAP.

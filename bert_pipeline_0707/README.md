@@ -56,6 +56,16 @@ Long-transcript handling is set by two variables at the top of `apply_server.sh`
 They still accept an override if you prefer, e.g.
 `sbatch --export=ALL,CHUNKING=0 apply_server.sh`.
 
+## English Translated-Transcript Run
+The translated English data from the LLM pipeline is supported directly:
+```bash
+MODELS_FILE=models_english.txt python prefetch_models.py
+sbatch apply_english.sh
+```
+`apply_english.sh` reads `../llm_pipeline_0707/processed_datasets_en`, fine-tunes
+`google-bert/bert-large-uncased` and `google-bert/bert-base-uncased`, and writes
+outputs under `runs_en/<model>/`.
+
 ## Metrics
 Same as the LLM pipeline: per-class precision/recall/F1, macro & weighted,
 accuracy, confusion matrix. Positive class = label 1 (TRUE). Each run writes
