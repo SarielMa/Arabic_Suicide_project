@@ -1,0 +1,319 @@
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. Bold marks SFT cells where
+SFT strictly improves on that model's own zero-shot condition. This is on the Arabic merged dataset. Epoch is 3.}
+\label{tab:llm-results-merged-ar-ep3}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc c ccccc}
+\toprule
+ & \multicolumn{5}{c}{Zero-shot} & & \multicolumn{5}{c}{SFT} \\
+\cmidrule(lr){2-6}\cmidrule(lr){8-12}
+Task (\% pos)
+ & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc & & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-1.5B}} \\
+\midrule
+MR \ (52\%) & 32.43 & 0.00 & 50.75 & 44.52 & 48.00 & & \textbf{66.67} & \textbf{64.10} & \textbf{77.09} & \textbf{78.49} & \textbf{66.67} \\
+HR \ (30\%) & 41.18 & 0.00 & 40.02 & 60.52 & 70.00 & & 41.18 & 0.00 & 39.41 & \textbf{60.71} & 70.00 \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-14B}} \\
+\midrule
+MR \ (52\%) & 63.77 & 53.85 & 72.70 & 68.55 & 64.00 & & \textbf{75.89} & \textbf{66.67} & \textbf{86.46} & \textbf{84.47} & \textbf{76.00} \\
+HR \ (30\%) & 71.27 & 55.56 & 70.33 & 73.48 & 76.67 & & \textbf{78.69} & \textbf{61.11} & \textbf{75.60} & \textbf{88.89} & \textbf{83.33} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Llama-3.3-70B}} \\
+\midrule
+MR \ (52\%) & 63.89 & 43.59 & 70.36 & 64.32 & 65.33 & & \textbf{76.00} & \textbf{74.36} & \textbf{89.53} & \textbf{87.29} & \textbf{76.00} \\
+HR \ (30\%) & 52.00 & 16.67 & 36.09 & 54.23 & 68.33 & & \textbf{72.05} & \textbf{44.44} & \textbf{54.03} & \textbf{73.48} & \textbf{80.00} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-8B}} \\
+\midrule
+MR \ (52\%) & 54.00 & 64.10 & 59.09 & 56.70 & 54.67 & & \textbf{71.92} & \textbf{74.36} & \textbf{81.88} & \textbf{81.23} & \textbf{72.00} \\
+HR \ (30\%) & 45.14 & 50.00 & 42.55 & 60.85 & 46.67 & & \textbf{68.65} & 50.00 & \textbf{56.61} & \textbf{79.43} & \textbf{75.00} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-70B}} \\
+\midrule
+MR \ (52\%) & 45.33 & 12.82 & 58.18 & 56.91 & 54.67 & & \textbf{69.14} & \textbf{58.97} & \textbf{84.09} & \textbf{81.13} & \textbf{69.33} \\
+HR \ (30\%) & 41.18 & 0.00 & 38.36 & 58.93 & 70.00 & & \textbf{74.43} & \textbf{55.56} & \textbf{64.23} & \textbf{86.44} & \textbf{80.00} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. Bold marks SFT cells where
+SFT strictly improves on that model's own zero-shot condition. This is on the English merged dataset. Epoch is 3.}
+\label{tab:llm-results-merged-en-ep3}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc c ccccc}
+\toprule
+ & \multicolumn{5}{c}{Zero-shot} & & \multicolumn{5}{c}{SFT} \\
+\cmidrule(lr){2-6}\cmidrule(lr){8-12}
+Task (\% pos)
+ & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc & & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-1.5B}} \\
+\midrule
+MR \ (52\%) & 43.78 & 23.08 & 61.02 & 55.38 & 46.67 & & \textbf{67.86} & \textbf{71.79} & \textbf{81.35} & \textbf{82.98} & \textbf{68.00} \\
+HR \ (30\%) & 56.80 & 27.78 & 39.31 & 58.73 & 68.33 & & 52.52 & \textbf{38.89} & \textbf{48.78} & \textbf{76.46} & 58.33 \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-14B}} \\
+\midrule
+MR \ (52\%) & 62.61 & 56.41 & 73.32 & 65.67 & 62.67 & & \textbf{74.67} & \textbf{71.79} & \textbf{85.13} & \textbf{83.76} & \textbf{74.67} \\
+HR \ (30\%) & 74.43 & 55.56 & 67.98 & 83.13 & 80.00 & & \textbf{74.60} & \textbf{66.67} & \textbf{73.59} & \textbf{88.43} & 78.33 \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Llama-3.3-70B}} \\
+\midrule
+MR \ (52\%) & 56.01 & 38.46 & 68.54 & 64.89 & 57.33 & & \textbf{77.33} & \textbf{74.36} & \textbf{88.95} & \textbf{86.32} & \textbf{77.33} \\
+HR \ (30\%) & 73.78 & 61.11 & 78.75 & 85.45 & 78.33 & & \textbf{76.19} & \textbf{66.67} & 73.64 & \textbf{87.17} & \textbf{80.00} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-8B}} \\
+\midrule
+MR \ (52\%) & 50.98 & 84.62 & 58.46 & 55.34 & 56.00 & & \textbf{73.33} & 71.79 & \textbf{85.85} & \textbf{84.62} & \textbf{73.33} \\
+HR \ (30\%) & 56.67 & 94.44 & 54.97 & 73.88 & 56.67 & & \textbf{64.47} & 44.44 & \textbf{66.74} & \textbf{84.52} & \textbf{71.67} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-70B}} \\
+\midrule
+MR \ (52\%) & 41.27 & 10.26 & 61.44 & 56.87 & 50.67 & & \textbf{74.50} & \textbf{64.10} & \textbf{84.86} & \textbf{83.76} & \textbf{74.67} \\
+HR \ (30\%) & 46.85 & 5.56 & 32.99 & 54.76 & 71.67 & & \textbf{75.38} & \textbf{61.11} & \textbf{70.85} & \textbf{84.19} & \textbf{80.00} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. Bold marks SFT cells where
+SFT strictly improves on that model's own zero-shot condition. This is on the Arabic merged dataset. Epoch is 10.}
+\label{tab:llm-results-merged-ar-ep10}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc c ccccc}
+\toprule
+ & \multicolumn{5}{c}{Zero-shot} & & \multicolumn{5}{c}{SFT} \\
+\cmidrule(lr){2-6}\cmidrule(lr){8-12}
+Task (\% pos)
+ & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc & & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-1.5B}} \\
+\midrule
+MR \ (52\%) & 32.43 & 0.00 & 50.75 & 44.52 & 48.00 & & \textbf{59.82} & \textbf{64.10} & \textbf{65.62} & \textbf{65.17} & \textbf{60.00} \\
+HR \ (30\%) & 41.18 & 0.00 & 40.02 & 60.52 & 70.00 & & \textbf{53.12} & \textbf{27.78} & \textbf{48.64} & \textbf{66.40} & 63.33 \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-14B}} \\
+\midrule
+MR \ (52\%) & 63.77 & 53.85 & 72.70 & 68.55 & 64.00 & & \textbf{71.92} & \textbf{64.10} & \textbf{85.89} & \textbf{84.37} & \textbf{72.00} \\
+HR \ (30\%) & 71.27 & 55.56 & 70.33 & 73.48 & 76.67 & & 70.44 & 44.44 & \textbf{71.54} & \textbf{87.70} & \textbf{78.33} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Llama-3.3-70B}} \\
+\midrule
+MR \ (52\%) & 63.89 & 43.59 & 70.36 & 64.32 & 65.33 & & \textbf{74.65} & \textbf{69.23} & \textbf{84.44} & \textbf{82.02} & \textbf{74.67} \\
+HR \ (30\%) & 52.00 & 16.67 & 36.09 & 54.23 & 68.33 & & \textbf{77.78} & \textbf{55.56} & \textbf{73.08} & \textbf{85.05} & \textbf{83.33} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-8B}} \\
+\midrule
+MR \ (52\%) & 54.00 & 64.10 & 59.09 & 56.70 & 54.67 & & \textbf{78.63} & \textbf{71.79} & \textbf{86.78} & \textbf{84.47} & \textbf{78.67} \\
+HR \ (30\%) & 45.14 & 50.00 & 42.55 & 60.85 & 46.67 & & \textbf{67.16} & 33.33 & \textbf{72.22} & \textbf{83.07} & \textbf{78.33} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-70B}} \\
+\midrule
+MR \ (52\%) & 45.33 & 12.82 & 58.18 & 56.91 & 54.67 & & \textbf{73.29} & \textbf{74.36} & \textbf{81.13} & \textbf{82.19} & \textbf{73.33} \\
+HR \ (30\%) & 41.18 & 0.00 & 38.36 & 58.93 & 70.00 & & \textbf{81.19} & \textbf{66.67} & \textbf{79.55} & \textbf{90.61} & \textbf{85.00} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. Bold marks SFT cells where
+SFT strictly improves on that model's own zero-shot condition. This is on the English merged dataset. Epoch is 10.}
+\label{tab:llm-results-merged-en-ep10}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc c ccccc}
+\toprule
+ & \multicolumn{5}{c}{Zero-shot} & & \multicolumn{5}{c}{SFT} \\
+\cmidrule(lr){2-6}\cmidrule(lr){8-12}
+Task (\% pos)
+ & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc & & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-1.5B}} \\
+\midrule
+MR \ (52\%) & 43.78 & 23.08 & 61.02 & 55.38 & 46.67 & & \textbf{77.33} & \textbf{74.36} & \textbf{84.57} & \textbf{83.01} & \textbf{77.33} \\
+HR \ (30\%) & 56.80 & 27.78 & 39.31 & 58.73 & 68.33 & & \textbf{67.17} & \textbf{50.00} & \textbf{73.03} & \textbf{85.19} & \textbf{73.33} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Qwen2.5-14B}} \\
+\midrule
+MR \ (52\%) & 62.61 & 56.41 & 73.32 & 65.67 & 62.67 & & \textbf{75.89} & \textbf{79.49} & \textbf{84.17} & \textbf{84.01} & \textbf{76.00} \\
+HR \ (30\%) & 74.43 & 55.56 & 67.98 & 83.13 & 80.00 & & 72.21 & \textbf{72.22} & 58.21 & 81.88 & 75.00 \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{Llama-3.3-70B}} \\
+\midrule
+MR \ (52\%) & 56.01 & 38.46 & 68.54 & 64.89 & 57.33 & & \textbf{75.96} & \textbf{76.92} & \textbf{89.85} & \textbf{87.25} & \textbf{76.00} \\
+HR \ (30\%) & 73.78 & 61.11 & 78.75 & 85.45 & 78.33 & & \textbf{85.00} & \textbf{88.89} & \textbf{80.79} & \textbf{92.59} & \textbf{86.67} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-8B}} \\
+\midrule
+MR \ (52\%) & 50.98 & 84.62 & 58.46 & 55.34 & 56.00 & & \textbf{78.66} & 76.92 & \textbf{87.21} & \textbf{85.90} & \textbf{78.67} \\
+HR \ (30\%) & 56.67 & 94.44 & 54.97 & 73.88 & 56.67 & & \textbf{79.11} & 77.78 & \textbf{73.65} & \textbf{89.35} & \textbf{81.67} \\
+\midrule
+\midrule
+\multicolumn{12}{c}{\textbf{AceGPT-v2-70B}} \\
+\midrule
+MR \ (52\%) & 41.27 & 10.26 & 61.44 & 56.87 & 50.67 & & \textbf{78.66} & \textbf{76.92} & \textbf{85.25} & \textbf{85.83} & \textbf{78.67} \\
+HR \ (30\%) & 46.85 & 5.56 & 32.99 & 54.76 & 71.67 & & \textbf{79.48} & \textbf{66.67} & \textbf{80.18} & \textbf{91.34} & \textbf{83.33} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. This is on the Arabic merged dataset. Epoch is 3.}
+\label{tab:bert-results-merged-ar-ep3}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc}
+\toprule
+Task (\% pos) & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{6}{c}{\textbf{CAMeLBERT-DA}} \\
+\midrule
+MR \ (52\%) & 37.22 & 100.00 & 66.47 & 63.68 & 53.33 \\
+HR \ (30\%) & 65.34 & 55.56 & 51.98 & 72.49 & 70.00 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{AraBERTv0.2}} \\
+\midrule
+MR \ (52\%) & 50.98 & 84.62 & 64.91 & 66.24 & 56.00 \\
+HR \ (30\%) & 70.68 & 88.89 & 47.24 & 75.13 & 71.67 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{MARBERT-Sakenni}} \\
+\midrule
+MR \ (52\%) & 34.21 & 100.00 & 63.85 & 61.61 & 52.00 \\
+HR \ (30\%) & 65.28 & 77.78 & 47.81 & 70.50 & 66.67 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{mBERT}} \\
+\midrule
+MR \ (52\%) & 46.70 & 89.74 & 67.17 & 61.61 & 54.67 \\
+HR \ (30\%) & 66.06 & 88.89 & 48.02 & 73.68 & 66.67 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. This is on the English merged dataset. Epoch is 3.}
+\label{tab:bert-results-merged-en-ep3}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc}
+\toprule
+Task (\% pos) & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{6}{c}{\textbf{BERT-large}} \\
+\midrule
+MR \ (52\%) & 54.59 & 56.41 & 62.40 & 56.27 & 54.67 \\
+HR \ (30\%) & 68.51 & 66.67 & 56.79 & 73.94 & 71.67 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{BERT-base}} \\
+\midrule
+MR \ (52\%) & 56.14 & 79.49 & 67.89 & 63.39 & 58.67 \\
+HR \ (30\%) & 68.94 & 38.89 & 60.08 & 74.21 & 78.33 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. This is on the Arabic merged dataset. Epoch is 10.}
+\label{tab:bert-results-merged-ar-ep10}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc}
+\toprule
+Task (\% pos) & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{6}{c}{\textbf{CAMeLBERT-DA}} \\
+\midrule
+MR \ (52\%) & 68.53 & 82.05 & 69.93 & 71.65 & 69.33 \\
+HR \ (30\%) & 70.69 & 61.11 & 51.90 & 77.12 & 75.00 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{AraBERTv0.2}} \\
+\midrule
+MR \ (52\%) & 69.25 & 71.79 & 68.95 & 72.44 & 69.33 \\
+HR \ (30\%) & 67.23 & 83.33 & 45.14 & 72.88 & 68.33 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{MARBERT-Sakenni}} \\
+\midrule
+MR \ (52\%) & 33.63 & 97.44 & 61.97 & 58.40 & 50.67 \\
+HR \ (30\%) & 53.28 & 83.33 & 49.21 & 67.06 & 53.33 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{mBERT}} \\
+\midrule
+MR \ (52\%) & 34.21 & 100.00 & 64.09 & 55.34 & 52.00 \\
+HR \ (30\%) & 72.82 & 77.78 & 55.05 & 76.06 & 75.00 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[!htbp]
+\centering
+\caption{Macro $F_1$, positive-class recall ($R_{+}$), PR-AUC, ROC-AUC,
+and overall accuracy (Acc), on the held-out test split, in percent. Positive prevalence
+per task is given in parentheses. This is on the English merged dataset. Epoch is 10.}
+\label{tab:bert-results-merged-en-ep10}
+\setlength{\tabcolsep}{5pt}
+\small
+\begin{tabular}{l ccccc}
+\toprule
+Task (\% pos) & Macro $F_1$ & $R_{+}$ & PR-AUC & ROC-AUC & Acc \\
+\midrule
+\multicolumn{6}{c}{\textbf{BERT-large}} \\
+\midrule
+MR \ (52\%) & 62.12 & 71.79 & 70.98 & 67.66 & 62.67 \\
+HR \ (30\%) & 71.29 & 77.78 & 73.26 & 83.07 & 73.33 \\
+\midrule
+\midrule
+\multicolumn{6}{c}{\textbf{BERT-base}} \\
+\midrule
+MR \ (52\%) & 64.57 & 76.92 & 69.79 & 69.66 & 65.33 \\
+HR \ (30\%) & 54.38 & 72.22 & 56.64 & 70.63 & 55.00 \\
+\bottomrule
+\end{tabular}
+\end{table*}
